@@ -1,29 +1,18 @@
 require('dotenv').config();
 
 const app = require('./src/app');
-const { Sequelize } = require('sequelize');
-const dbConfig = require('./src/config/database');
+const { sequelize } = require('./src/models');
+const { initializeFirebase } = require('./src/config/firebase');
 
 const PORT = process.env.PORT || 3000;
 const env = process.env.NODE_ENV || 'development';
-const config = dbConfig[env];
 
-// Create Sequelize instance
-const sequelize = new Sequelize(
-  config.database,
-  config.username,
-  config.password,
-  {
-    host: config.host,
-    port: config.port,
-    dialect: config.dialect,
-    logging: config.logging,
-  }
-);
-
-// Test database connection and start server
+// Start server
 const startServer = async () => {
   try {
+    // Initialize Firebase
+    initializeFirebase();
+
     // Test database connection
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
@@ -33,9 +22,10 @@ const startServer = async () => {
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`📍 Environment: ${env}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+      console.log(`🔗 API Base URL: http://localhost:${PORT}/api/v1`);
     });
   } catch (error) {
-    console.error('❌ Unable to connect to the database:', error.message);
+    console.error('❌ Unable to start server:', error.message);
     process.exit(1);
   }
 };

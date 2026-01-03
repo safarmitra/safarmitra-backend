@@ -1,0 +1,68 @@
+'use strict';
+
+const { DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
+  const User = sequelize.define(
+    'User',
+    {
+      id: {
+        type: DataTypes.BIGINT,
+        primaryKey: true,
+        autoIncrement: true,
+      },
+      role_id: {
+        type: DataTypes.SMALLINT,
+        references: {
+          model: 'roles',
+          key: 'id',
+        },
+      },
+      phone_number: {
+        type: DataTypes.STRING(15),
+        allowNull: false,
+        unique: true,
+      },
+      full_name: {
+        type: DataTypes.STRING(100),
+      },
+      address: {
+        type: DataTypes.TEXT,
+      },
+      agency_name: {
+        type: DataTypes.STRING(150),
+      },
+      profile_image_url: {
+        type: DataTypes.TEXT,
+      },
+      dob: {
+        type: DataTypes.STRING(15),
+      },
+      fcm_token: {
+        type: DataTypes.TEXT,
+      },
+      is_active: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+      },
+      kyc_status: {
+        type: DataTypes.STRING(20),
+        defaultValue: 'PENDING',
+      },
+      kyc_reject_reason: {
+        type: DataTypes.TEXT,
+      },
+      deleted_at: {
+        type: DataTypes.DATE,
+      },
+    },
+    {
+      tableName: 'users',
+      timestamps: true,
+      paranoid: true,
+      deletedAt: 'deleted_at',
+    }
+  );
+
+  return User;
+};

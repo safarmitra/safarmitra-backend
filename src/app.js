@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
+const routes = require('./routes');
 
 const app = express();
 
@@ -30,8 +31,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API routes will be added here
-// app.use('/api/v1', routes);
+// API routes
+app.use('/api/v1', routes);
 
 // 404 handler
 app.use(notFoundHandler);
