@@ -60,7 +60,7 @@ Server will start at `http://localhost:3000`
 safarmitra-backend/
 ├── src/
 │   ├── config/          # Configuration files
-│   ├── controllers/     # Route handlers
+���   ├── controllers/     # Route handlers
 │   ├── middlewares/     # Express middlewares
 │   ├── models/          # Sequelize models
 │   ├── routes/          # API routes
@@ -77,7 +77,7 @@ safarmitra-backend/
 
 ---
 
-## 🔌 API Endpoints (8 total)
+## 🔌 API Endpoints (13 total)
 
 ### Auth (3 endpoints)
 | Method | Endpoint | Description |
@@ -98,6 +98,15 @@ safarmitra-backend/
 |--------|----------|-------------|
 | GET | `/api/v1/kyc/status` | Get KYC status |
 | POST | `/api/v1/kyc/submit` | Submit/Update KYC |
+
+### Cars (5 endpoints)
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| GET | `/api/v1/cars` | Both | List cars (with filters) |
+| GET | `/api/v1/cars/:id` | Both | Get car details |
+| POST | `/api/v1/cars` | Operator | Create car |
+| PUT | `/api/v1/cars/:id` | Operator | Update car |
+| DELETE | `/api/v1/cars/:id` | Operator | Delete car |
 
 📖 **Full API Documentation:** [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md)
 
@@ -155,12 +164,21 @@ AWS_S3_BUCKET=
 
 ---
 
-## 🔐 Authentication Flow
+## 🔐 Authentication & Authorization
 
+### Authentication Flow
 1. Flutter app handles phone OTP via Firebase
 2. Flutter sends Firebase ID Token + FCM Token to backend
 3. Backend verifies token, extracts phone, issues JWT
 4. JWT used for all subsequent requests
+
+### Role-Based Access
+- **DRIVER**: Can browse and view cars
+- **OPERATOR**: Can manage their own car listings
+
+### KYC Requirement
+- Car APIs require KYC approval
+- Auth, User, and KYC APIs don't require KYC
 
 ---
 

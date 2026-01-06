@@ -24,7 +24,7 @@ const authMiddleware = (req, res, next) => {
 };
 
 /**
- * Role-based access control middleware
+ * Role-based access control middleware (array of roles)
  */
 const roleMiddleware = (allowedRoles) => {
   return (req, res, next) => {
@@ -37,6 +37,27 @@ const roleMiddleware = (allowedRoles) => {
     }
 
     if (!allowedRoles.includes(req.user.roleCode)) {
+      return sendError(res, 'Access denied. Insufficient permissions', 403, 'FORBIDDEN');
+    }
+
+    next();
+  };
+};
+
+/**
+ * Require specific role middleware (single role)
+ */
+const requireRole = (role) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return sendError(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+    }
+
+    if (!req.user.roleCode) {
+      return sendError(res, 'Please select a role first', 403, 'ROLE_NOT_SELECTED');
+    }
+
+    if (req.user.roleCode !== role) {
       return sendError(res, 'Access denied. Insufficient permissions', 403, 'FORBIDDEN');
     }
 
@@ -64,8 +85,15 @@ const kycMiddleware = (req, res, next) => {
   next();
 };
 
+/**
+ * Require KYC approval middleware (alias for kycMiddleware)
+ */
+const requireKyc = kycMiddleware;
+
 module.exports = {
   authMiddleware,
   roleMiddleware,
+  requireRole,
   kycMiddleware,
+  requireKyc,
 };

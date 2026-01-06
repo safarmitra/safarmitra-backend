@@ -16,6 +16,8 @@
    - [Auth APIs](#1-auth-apis)
    - [User APIs](#2-user-apis)
    - [KYC APIs](#3-kyc-apis)
+   - [Car APIs](#4-car-apis)
+   - [Booking Request APIs](#5-booking-request-apis)
 6. [Database Schema](#database-schema)
 7. [Flow Diagrams](#flow-diagrams)
 
@@ -90,7 +92,7 @@ Authorization: Bearer <jwt_token>
 {
   "success": true,
   "message": "Operation successful",
-  "data": { ... },
+  "data": [ ... ],
   "meta": {
     "page": 1,
     "limit": 10,
@@ -156,10 +158,10 @@ Login existing user or register new user with Firebase token.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| firebase_token | string | Yes | Firebase ID token from Flutter (contains phone number) |
-| fcm_token | string | No | FCM device token for push notifications |
+| Field            | Type   | Required | Description                                          |
+|------------------|--------|----------|------------------------------------------------------|
+| `firebase_token` | string | Yes      | Firebase ID token from Flutter (contains phone number) |
+| `fcm_token`      | string | No       | FCM device token for push notifications              |
 
 **Validations:**
 - `firebase_token`: Required, must be valid Firebase ID token
@@ -214,20 +216,6 @@ Login existing user or register new user with Firebase token.
 | 401 | Invalid Firebase token | Token verification failed |
 | 403 | Account suspended | User is_active = false |
 
-**Onboarding Logic:**
-- `role_selected`: `true` if user has selected DRIVER or OPERATOR
-- `kyc_submitted`: `true` if user has submitted personal info (full_name not null)
-- `kyc_status`: PENDING | APPROVED | REJECTED
-
-**Flutter Navigation Flow:**
-```
-if (!onboarding.role_selected) → Role Selection Screen
-else if (!onboarding.kyc_submitted) → KYC Screen
-else if (onboarding.kyc_status == 'PENDING') → KYC Pending Screen
-else if (onboarding.kyc_status == 'REJECTED') → KYC Rejected Screen
-else → Dashboard
-```
-
 ---
 
 ### 1.2 Select Role
@@ -244,9 +232,9 @@ Select user role after first login.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| role | string | Yes | Either `DRIVER` or `OPERATOR` |
+| Field  | Type   | Required | Description                    |
+|--------|--------|----------|--------------------------------|
+| `role` | string | Yes      | Either `DRIVER` or `OPERATOR`  |
 
 **Validations:**
 - `role`: Required, must be exactly "DRIVER" or "OPERATOR"
@@ -268,10 +256,6 @@ Select user role after first login.
       "id": "1",
       "phone_number": "+919876543210",
       "full_name": null,
-      "address": null,
-      "agency_name": null,
-      "profile_image_url": null,
-      "dob": null,
       "role": "DRIVER",
       "kyc_status": "PENDING",
       "is_active": true,
@@ -297,11 +281,6 @@ Logout user and clear FCM token.
 **Endpoint:** `POST /auth/logout`  
 **Auth Required:** Yes
 
-**Request Body:** None
-
-**Validations:**
-- Valid JWT token required
-
 **Logic:**
 1. Verify JWT token (authMiddleware)
 2. Clear FCM token from user record (set to null)
@@ -315,12 +294,6 @@ Logout user and clear FCM token.
 }
 ```
 
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-
 ---
 
 ## 2. User APIs
@@ -331,11 +304,6 @@ Get current logged-in user's profile.
 
 **Endpoint:** `GET /users/me`  
 **Auth Required:** Yes
-
-**Request Body:** None
-
-**Validations:**
-- Valid JWT token required
 
 **Logic:**
 1. Verify JWT token (authMiddleware)
@@ -364,13 +332,6 @@ Get current logged-in user's profile.
 }
 ```
 
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-| 404 | User not found | User deleted |
-
 ---
 
 ### 2.2 Update My Profile
@@ -382,13 +343,14 @@ Update current user's profile information and/or profile image.
 **Content-Type:** `multipart/form-data`
 
 **Request Body:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| full_name | string | No | Max 100 characters |
-| address | string | No | Max 500 characters |
-| agency_name | string | No | Max 150 characters |
-| dob | string | No | Date of birth (max 15 chars) |
-| profile_image | file | No | JPEG, JPG, or PNG (max 5MB) |
+
+| Field           | Type   | Required | Description                      |
+|-----------------|--------|----------|----------------------------------|
+| `full_name`     | string | No       | Max 100 characters               |
+| `address`       | string | No       | Max 500 characters               |
+| `agency_name`   | string | No       | Max 150 characters               |
+| `dob`           | string | No       | Date of birth (max 15 chars)     |
+| `profile_image` | file   | No       | JPEG, JPG, or PNG (max 5MB)      |
 
 **Validations:**
 - `full_name`: Max 100 characters
@@ -400,14 +362,11 @@ Update current user's profile information and/or profile image.
 **Logic:**
 1. Verify JWT token (authMiddleware)
 2. Parse multipart form data (multer)
-3. Validate profile image if provided (validateProfileImage)
-4. Validate text fields (validateUpdateProfile)
+3. Validate profile image if provided
+4. Validate text fields
 5. Find user by ID
 6. Build update data from allowed fields
-7. If profile image provided:
-   - Delete old image from S3 (if exists)
-   - Upload new image to S3
-   - Add new URL to update data
+7. If profile image provided → Delete old from S3, upload new
 8. Update user record
 9. Return updated profile
 
@@ -421,26 +380,13 @@ Update current user's profile information and/or profile image.
     "phone_number": "+919876543210",
     "full_name": "John Doe",
     "address": "123 Main Street, City",
-    "agency_name": "ABC Travels",
     "profile_image_url": "https://s3.../profiles/abc123.jpg",
-    "dob": "1990-01-15",
     "role": "DRIVER",
     "kyc_status": "PENDING",
-    "is_active": true,
-    "created_at": "2026-01-03T10:00:00.000Z"
+    "is_active": true
   }
 }
 ```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 400 | Full name must be less than 100 characters | Validation failed |
-| 400 | Only JPEG, JPG and PNG images are allowed | Invalid image type |
-| 400 | Image size must be less than 5MB | Image too large |
-| 401 | Unauthorized | Missing/invalid token |
-| 404 | User not found | User deleted |
 
 ---
 
@@ -455,10 +401,6 @@ Get public profile of any user by their ID.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | id | number | User ID |
-
-**Validations:**
-- Valid JWT token required
-- `id`: Must be valid user ID
 
 **Logic:**
 1. Verify JWT token (authMiddleware)
@@ -482,13 +424,6 @@ Get public profile of any user by their ID.
 }
 ```
 
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-| 404 | User not found | Invalid user ID |
-
 ---
 
 ## 3. KYC APIs
@@ -499,11 +434,6 @@ Get current KYC status and submitted documents.
 
 **Endpoint:** `GET /kyc/status`  
 **Auth Required:** Yes
-
-**Request Body:** None
-
-**Validations:**
-- Valid JWT token required
 
 **Logic:**
 1. Verify JWT token (authMiddleware)
@@ -548,32 +478,11 @@ Get current KYC status and submitted documents.
 }
 ```
 
-**KYC Status Values:**
-- `PENDING` - Waiting for admin review
-- `APPROVED` - KYC verified
-- `REJECTED` - KYC rejected (check `kyc_reject_reason`)
-
-**Document Status Values:**
-- `PENDING` - Document under review
-- `APPROVED` - Document verified
-- `REJECTED` - Document rejected (check `reject_reason`)
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-| 404 | User not found | User deleted |
-
 ---
 
 ### 3.2 Submit KYC
 
 Submit or update KYC information (personal info + documents).
-
-This single API handles:
-- **Initial submission**: Send all personal info and documents
-- **Resubmission**: Send only the fields/documents that need to be updated
 
 **Endpoint:** `POST /kyc/submit`  
 **Auth Required:** Yes  
@@ -581,77 +490,39 @@ This single API handles:
 
 **Request Body:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| full_name | string | No* | Max 100 characters |
-| address | string | No* | Max 500 characters |
-| agency_name | string | No | Max 150 characters |
-| profile_image | file | No | JPEG, JPG, PNG (max 5MB) |
-| documents | array | No* | Array of document objects |
+| Field           | Type   | Required | Description                    |
+|-----------------|--------|----------|--------------------------------|
+| `full_name`     | string | No*      | Max 100 characters             |
+| `address`       | string | No*      | Max 500 characters             |
+| `agency_name`   | string | No       | Max 150 characters             |
+| `profile_image` | file   | No       | JPEG, JPG, PNG (max 5MB)       |
+| `documents`     | array  | No*      | Array of document objects      |
 
 *Required for initial submission, optional for resubmission
 
-**Document Object:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| documents[i][document_type] | string | Yes | AADHAAR, DRIVING_LICENSE, PAN_CARD |
-| documents[i][document_number] | string | Yes | Document number |
-| documents[i][front_doc] | file | Yes | Front image (JPEG, JPG, PNG, PDF, max 5MB) |
-| documents[i][back_doc] | file | No | Back image (JPEG, JPG, PNG, PDF, max 5MB) |
+**Document Fields:**
 
-**Example Request (Initial Submission):**
-```
-full_name: John Doe
-address: 123 Main Street, City
-agency_name: ABC Travels
-profile_image: <file>
-
-documents[0][document_type]: AADHAAR
-documents[0][document_number]: 1234-5678-9012
-documents[0][front_doc]: <file>
-documents[0][back_doc]: <file>
-
-documents[1][document_type]: DRIVING_LICENSE
-documents[1][document_number]: DL-1234567890
-documents[1][front_doc]: <file>
-documents[1][back_doc]: <file>
-```
-
-**Example Request (Resubmission - only rejected document):**
-```
-documents[0][document_type]: DRIVING_LICENSE
-documents[0][document_number]: DL-1234567890
-documents[0][front_doc]: <file>
-documents[0][back_doc]: <file>
-```
-
-**Validations:**
-- `full_name`: Max 100 characters
-- `address`: Max 500 characters
-- `agency_name`: Max 150 characters
-- `profile_image`: Only JPEG/JPG/PNG, max 5MB
-- `documents[i][document_type]`: Required if document provided
-- `documents[i][document_number]`: Required if document provided
-- `documents[i][front_doc]`: Required if document provided, JPEG/JPG/PNG/PDF, max 5MB
-- `documents[i][back_doc]`: Optional, JPEG/JPG/PNG/PDF, max 5MB
+| Field                           | Type   | Required | Description                              |
+|---------------------------------|--------|----------|------------------------------------------|
+| `documents[i][document_type]`   | string | Yes      | `AADHAAR`, `DRIVING_LICENSE`, `PAN_CARD` |
+| `documents[i][document_number]` | string | Yes      | Document number                          |
+| `documents[i][front_doc]`       | file   | Yes      | Front image (max 5MB)                    |
+| `documents[i][back_doc]`        | file   | No       | Back image (max 5MB)                     |
 
 **Logic:**
 1. Verify JWT token (authMiddleware)
 2. Parse multipart form data (multer)
-3. Validate request body (validateKycSubmit)
-4. Validate document files (validateDocumentFiles)
-5. Find user by ID
-6. Update personal info if provided (full_name, address, agency_name)
-7. Upload profile image if provided:
-   - Delete old image from S3
-   - Upload new image
-8. Process each document:
+3. Validate request body and files
+4. Find user by ID
+5. Update personal info if provided
+6. Upload profile image if provided
+7. Process each document:
    - Hash document number (SHA-256)
-   - Check for duplicates (same hash, different user)
-   - Upload front/back images to S3
-   - Create new or update existing document record
-9. Update user's kyc_status to 'PENDING'
-10. Return success with summary
+   - Check for duplicates
+   - Upload images to S3
+   - Create/update document record
+8. Update user's kyc_status to 'PENDING'
+9. Return success with summary
 
 **Success Response (200):**
 ```json
@@ -667,26 +538,823 @@ documents[0][back_doc]: <file>
 }
 ```
 
+---
+
+## 4. Car APIs
+
+### 4.1 List Cars
+
+List cars with filters and pagination.
+
+**Endpoint:** `GET /cars`  
+**Auth Required:** Yes  
+**KYC Required:** Yes
+
+**Behavior by Role:**
+- **DRIVER**: Shows only active cars from all operators
+- **OPERATOR**: Shows only their own cars (active + inactive)
+
+**Query Parameters:**
+
+| Parameter      | Type    | Required | Description                                    |
+|----------------|---------|----------|------------------------------------------------|
+| `search`       | string  | No       | Search by car name                             |
+| `category`     | string  | No       | `TAXI` / `PRIVATE`                             |
+| `fuel_type`    | string  | No       | `PETROL` / `DIESEL` / `CNG` / `ELECTRIC`       |
+| `transmission` | string  | No       | `MANUAL` / `AUTOMATIC`                         |
+| `rate_type`    | string  | No       | `12HR` / `24HR`                                |
+| `min_price`    | number  | No       | Minimum rate amount                            |
+| `max_price`    | number  | No       | Maximum rate amount                            |
+| `purposes`     | string  | No       | Comma-separated: `SELF_DRIVE,CORPORATE`        |
+| `is_active`    | boolean | No       | For operators only (filter by status)          |
+| `page`         | number  | No       | Page number (default: 1)                       |
+| `limit`        | number  | No       | Items per page (default: 10)                   |
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Check user role
+4. For DRIVER: Filter where is_active = true
+5. For OPERATOR: Filter where operator_id = userId
+6. Apply search and filters
+7. Apply pagination
+8. Return cars with FULL details (all images, operator info)
+
+**Note:** Returns full car details in listing so Flutter can navigate to detail page instantly without additional API call.
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Cars fetched successfully",
+  "data": [
+    {
+      "id": "1",
+      "car_name": "Swift Dzire",
+      "category": "TAXI",
+      "transmission": "MANUAL",
+      "fuel_type": "PETROL",
+      "rate_type": "24HR",
+      "rate_amount": 1200.00,
+      "deposit_amount": 5000.00,
+      "purposes": ["SELF_DRIVE", "CORPORATE"],
+      "instructions": "Please return with full tank",
+      "rc_front_url": "https://s3.../cars/rc/front.jpg",
+      "rc_back_url": "https://s3.../cars/rc/back.jpg",
+      "is_active": true,
+      "images": [
+        {
+          "id": 1,
+          "image_url": "https://s3.../cars/images/1.jpg",
+          "is_primary": true
+        },
+        {
+          "id": 2,
+          "image_url": "https://s3.../cars/images/2.jpg",
+          "is_primary": false
+        }
+      ],
+      "operator": {
+        "id": "5",
+        "full_name": "Jane Smith",
+        "agency_name": "XYZ Rentals",
+        "profile_image_url": "https://s3.../profiles/xyz.jpg",
+        "phone_number": "+919876543210",
+        "kyc_verified": true
+      },
+      "created_at": "2026-01-03T10:00:00.000Z",
+      "updated_at": "2026-01-03T10:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 25,
+    "total_pages": 3
+  }
+}
+```
+
 **Error Responses:**
 
 | Status | Message | When |
 |--------|---------|------|
-| 400 | Full name must be less than 100 characters | Validation failed |
-| 400 | Document type is required | Missing document_type |
-| 400 | Document number is required | Missing document_number |
-| 400 | Front document image is required for AADHAAR | Missing front_doc |
-| 400 | Only JPEG, JPG, PNG and PDF files are allowed | Invalid file type |
-| 400 | File size must be less than 5MB | File too large |
-| 400 | AADHAAR is already registered with another account | Duplicate document |
 | 401 | Unauthorized | Missing/invalid token |
-| 404 | User not found | User deleted |
+| 403 | KYC verification required | KYC not approved |
 
-**Document Types:**
-- `AADHAAR` - Aadhaar Card
-- `DRIVING_LICENSE` - Driving License
-- `PAN_CARD` - PAN Card
+---
 
-**Note:** Document numbers are hashed (SHA-256) before storing for security.
+### 4.2 Get Car by ID
+
+Get car details by ID.
+
+**Endpoint:** `GET /cars/:id`  
+**Auth Required:** Yes  
+**KYC Required:** Yes
+
+**URL Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | number | Car ID |
+
+**Behavior by Role:**
+- **DRIVER**: Can view active cars only
+- **OPERATOR**: Can view their own cars only
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Find car by ID with images and operator info
+4. For DRIVER: Check car is active
+5. For OPERATOR: Check car belongs to them
+6. Return full car details
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Car fetched successfully",
+  "data": {
+    "id": "1",
+    "car_name": "Swift Dzire",
+    "category": "TAXI",
+    "transmission": "MANUAL",
+    "fuel_type": "PETROL",
+    "rate_type": "24HR",
+    "rate_amount": 1200.00,
+    "deposit_amount": 5000.00,
+    "purposes": ["SELF_DRIVE", "CORPORATE"],
+    "instructions": "Please return with full tank",
+    "rc_front_url": "https://s3.../cars/rc/front.jpg",
+    "rc_back_url": "https://s3.../cars/rc/back.jpg",
+    "is_active": true,
+    "images": [
+      {
+        "id": 1,
+        "image_url": "https://s3.../cars/images/1.jpg",
+        "is_primary": true
+      },
+      {
+        "id": 2,
+        "image_url": "https://s3.../cars/images/2.jpg",
+        "is_primary": false
+      }
+    ],
+    "operator": {
+      "id": "5",
+      "full_name": "Jane Smith",
+      "agency_name": "XYZ Rentals",
+      "profile_image_url": "https://s3.../profiles/xyz.jpg",
+      "phone_number": "+919876543210",
+      "kyc_verified": true
+    },
+    "created_at": "2026-01-03T10:00:00.000Z",
+    "updated_at": "2026-01-03T10:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | You do not have permission | Operator viewing other's car |
+| 404 | Car not found | Invalid ID or inactive car for driver |
+
+---
+
+### 4.3 Create Car
+
+Create a new car listing (OPERATOR only).
+
+**Endpoint:** `POST /cars`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** OPERATOR  
+**Content-Type:** `multipart/form-data`
+
+**Request Body:**
+
+| Field                 | Type    | Required | Description                                              |
+|-----------------------|---------|----------|----------------------------------------------------------|
+| `car_name`            | string  | Yes      | Car name/model (max 100 chars)                           |
+| `category`            | string  | Yes      | `TAXI` / `PRIVATE`                                       |
+| `transmission`        | string  | Yes      | `MANUAL` / `AUTOMATIC`                                   |
+| `fuel_type`           | string  | Yes      | `PETROL` / `DIESEL` / `CNG` / `ELECTRIC`                 |
+| `rate_type`           | string  | Yes      | `12HR` / `24HR`                                          |
+| `rate_amount`         | number  | Yes      | Rate amount (positive)                                   |
+| `deposit_amount`      | number  | No       | Deposit amount                                           |
+| `purposes`            | string  | No       | Comma-separated: `SELF_DRIVE,CORPORATE,ONLY_VERIFIED_DRIVER` |
+| `instructions`        | string  | No       | Instructions for drivers (max 1000 chars)                |
+| `is_active`           | boolean | No       | Active status (default: true)                            |
+| `rc_front`            | file    | Yes      | RC front image (max 5MB)                                 |
+| `rc_back`             | file    | Yes      | RC back image (max 5MB)                                  |
+| `images`              | files   | No       | Car images (max 5 files, each max 5MB)                   |
+| `primary_image_index` | number  | No       | Index of primary image (0-4)                             |
+
+**Validations:**
+- `car_name`: Required, max 100 characters
+- `category`: Required, must be TAXI or PRIVATE
+- `transmission`: Required, must be MANUAL or AUTOMATIC
+- `fuel_type`: Required, must be PETROL, DIESEL, CNG, or ELECTRIC
+- `rate_type`: Required, must be 12HR or 24HR
+- `rate_amount`: Required, must be positive number
+- `rc_front`: Required, JPEG/JPG/PNG/PDF, max 5MB
+- `rc_back`: Required, JPEG/JPG/PNG/PDF, max 5MB
+- `images`: Optional, max 5 files, each JPEG/JPG/PNG/PDF, max 5MB
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is OPERATOR (requireRole)
+4. Parse multipart form data (multer)
+5. Validate request body
+6. Validate RC documents exist
+7. Upload RC front and back to S3
+8. Parse purposes from comma-separated string
+9. Create car record
+10. Upload car images to S3
+11. Create car image records with primary flag
+12. Return created car
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Car created successfully",
+  "data": {
+    "id": "1",
+    "car_name": "Swift Dzire",
+    "category": "TAXI",
+    "transmission": "MANUAL",
+    "fuel_type": "PETROL",
+    "rate_type": "24HR",
+    "rate_amount": 1200.00,
+    "deposit_amount": 5000.00,
+    "purposes": ["SELF_DRIVE", "CORPORATE"],
+    "instructions": "Please return with full tank",
+    "rc_front_url": "https://s3.../cars/rc/front.jpg",
+    "rc_back_url": "https://s3.../cars/rc/back.jpg",
+    "is_active": true,
+    "images": [
+      {
+        "id": 1,
+        "image_url": "https://s3.../cars/images/1.jpg",
+        "is_primary": true
+      }
+    ],
+    "operator": { ... },
+    "created_at": "2026-01-03T10:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Car name is required | Missing car_name |
+| 400 | Category must be either TAXI or PRIVATE | Invalid category |
+| 400 | RC front image is required | Missing rc_front |
+| 400 | Maximum 5 car images allowed | Too many images |
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | Access denied | Not an operator |
+
+---
+
+### 4.4 Update Car
+
+Update car details (OPERATOR only, own cars).
+
+**Endpoint:** `PUT /cars/:id`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** OPERATOR  
+**Content-Type:** `multipart/form-data`
+
+**URL Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | number | Car ID |
+
+**Request Body:**
+
+| Field                 | Type    | Required | Description                              |
+|-----------------------|---------|----------|------------------------------------------|
+| `car_name`            | string  | No       | Car name/model                           |
+| `category`            | string  | No       | `TAXI` / `PRIVATE`                       |
+| `transmission`        | string  | No       | `MANUAL` / `AUTOMATIC`                   |
+| `fuel_type`           | string  | No       | `PETROL` / `DIESEL` / `CNG` / `ELECTRIC` |
+| `rate_type`           | string  | No       | `12HR` / `24HR`                          |
+| `rate_amount`         | number  | No       | Rate amount                              |
+| `deposit_amount`      | number  | No       | Deposit amount                           |
+| `purposes`            | string  | No       | Comma-separated purposes                 |
+| `instructions`        | string  | No       | Instructions for drivers                 |
+| `is_active`           | boolean | No       | Active/Inactive status                   |
+| `rc_front`            | file    | No       | New RC front image                       |
+| `rc_back`             | file    | No       | New RC back image                        |
+| `images`              | files   | No       | New car images (max 5)                   |
+| `primary_image_index` | number  | No       | Index of primary image                   |
+| `remove_images`       | string  | No       | Comma-separated image IDs to remove      |
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is OPERATOR (requireRole)
+4. Parse multipart form data (multer)
+5. Validate request body
+6. Find car and verify ownership
+7. Update RC documents if provided (delete old, upload new)
+8. Update car fields
+9. Handle image removal (delete from S3 and DB)
+10. Upload new images if provided
+11. Update primary image flag
+12. Return updated car
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Car updated successfully",
+  "data": {
+    "id": "1",
+    "car_name": "Swift Dzire",
+    "category": "TAXI",
+    "is_active": false,
+    "images": [ ... ],
+    "operator": { ... },
+    "updated_at": "2026-01-03T12:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Category must be either TAXI or PRIVATE | Invalid category |
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | Access denied | Not an operator |
+| 403 | You do not have permission | Not owner of car |
+| 404 | Car not found | Invalid car ID |
+
+---
+
+### 4.5 Delete Car
+
+Delete a car listing (OPERATOR only, own cars).
+
+**Endpoint:** `DELETE /cars/:id`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** OPERATOR
+
+**URL Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | number | Car ID |
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is OPERATOR (requireRole)
+4. Find car and verify ownership
+5. Delete all car images from S3
+6. Delete RC documents from S3
+7. Delete car record (cascade deletes images)
+8. Return success
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Car deleted successfully"
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | Access denied | Not an operator |
+| 403 | You do not have permission | Not owner of car |
+| 404 | Car not found | Invalid car ID |
+
+---
+
+## 5. Booking Request APIs
+
+### 5.1 Create Booking Request
+
+Create a new booking request for a car (DRIVER only).
+
+**Endpoint:** `POST /booking-requests`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** DRIVER
+
+**Request Body:**
+
+| Field     | Type   | Required | Description                        |
+|-----------|--------|----------|------------------------------------|
+| `car_id`  | number | Yes      | ID of the car to request           |
+| `message` | string | No       | Message to operator (max 1000 chars) |
+
+**Validations:**
+- `car_id`: Required, must be a valid car ID
+- `message`: Optional, max 1000 characters
+- Car must be active
+- Cannot request your own car
+- Cannot have duplicate pending request for same car
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is DRIVER (requireRole)
+4. Validate request body
+5. Find car and verify it's active
+6. Check driver is not the car owner
+7. Check for existing pending request
+8. Create booking request with status PENDING
+9. Return created request with full details
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Booking request created successfully",
+  "data": {
+    "id": "1",
+    "message": "I need this car for a wedding event",
+    "status": "PENDING",
+    "reject_reason": null,
+    "created_at": "2026-01-03T10:00:00.000Z",
+    "updated_at": "2026-01-03T10:00:00.000Z",
+    "car": {
+      "id": "1",
+      "car_name": "Swift Dzire",
+      "category": "TAXI",
+      "transmission": "MANUAL",
+      "fuel_type": "PETROL",
+      "rate_type": "24HR",
+      "rate_amount": 1200.00,
+      "deposit_amount": 5000.00,
+      "purposes": ["SELF_DRIVE", "CORPORATE"],
+      "instructions": "Please return with full tank",
+      "is_active": true,
+      "images": [
+        {
+          "id": 1,
+          "image_url": "https://s3.../cars/images/1.jpg",
+          "is_primary": true
+        }
+      ]
+    },
+    "operator": {
+      "id": "5",
+      "full_name": "Jane Smith",
+      "agency_name": "XYZ Rentals",
+      "phone_number": "+919876543210",
+      "profile_image_url": "https://s3.../profiles/xyz.jpg",
+      "kyc_verified": true
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Car ID is required | Missing car_id |
+| 400 | Car is not available for booking | Car is inactive |
+| 400 | You cannot book your own car | Driver owns the car |
+| 400 | You already have a pending request for this car | Duplicate request |
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | Access denied | Not a driver |
+| 404 | Car not found | Invalid car ID |
+
+---
+
+### 5.2 List Booking Requests
+
+List booking requests with filters and pagination. Returns FULL details.
+
+**Endpoint:** `GET /booking-requests`  
+**Auth Required:** Yes  
+**KYC Required:** Yes
+
+**Behavior by Role:**
+- **DRIVER**: Shows their own requests with car + operator details
+- **OPERATOR**: Shows requests for their cars with car + driver details
+
+**Query Parameters:**
+
+| Parameter | Type   | Required | Description                                      |
+|-----------|--------|----------|--------------------------------------------------|
+| `status`  | string | No       | `PENDING` / `ACCEPTED` / `REJECTED` / `ALL` (default: ALL) |
+| `car_id`  | number | No       | Filter by car ID (for operators only)            |
+| `page`    | number | No       | Page number (default: 1)                         |
+| `limit`   | number | No       | Items per page (default: 10, max: 50)            |
+
+**Note:** Returns full details in listing so Flutter can navigate to detail page instantly without additional API call.
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Check user role
+4. For DRIVER: Filter where driver_id = userId
+5. For OPERATOR: Filter where operator_id = userId
+6. Apply status filter
+7. Apply car_id filter (operators only)
+8. Apply pagination
+9. Return requests with FULL details
+
+**Success Response for DRIVER (200):**
+```json
+{
+  "success": true,
+  "message": "Booking requests fetched successfully",
+  "data": [
+    {
+      "id": "1",
+      "message": "I need this car for a wedding event",
+      "status": "PENDING",
+      "reject_reason": null,
+      "created_at": "2026-01-03T10:00:00.000Z",
+      "updated_at": "2026-01-03T10:00:00.000Z",
+      "car": {
+        "id": "1",
+        "car_name": "Swift Dzire",
+        "category": "TAXI",
+        "transmission": "MANUAL",
+        "fuel_type": "PETROL",
+        "rate_type": "24HR",
+        "rate_amount": 1200.00,
+        "deposit_amount": 5000.00,
+        "purposes": ["SELF_DRIVE", "CORPORATE"],
+        "instructions": "Please return with full tank",
+        "is_active": true,
+        "images": [
+          {
+            "id": 1,
+            "image_url": "https://s3.../cars/images/1.jpg",
+            "is_primary": true
+          }
+        ]
+      },
+      "operator": {
+        "id": "5",
+        "full_name": "Jane Smith",
+        "agency_name": "XYZ Rentals",
+        "phone_number": "+919876543210",
+        "profile_image_url": "https://s3.../profiles/xyz.jpg",
+        "kyc_verified": true
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 5,
+    "total_pages": 1
+  }
+}
+```
+
+**Success Response for OPERATOR (200):**
+```json
+{
+  "success": true,
+  "message": "Booking requests fetched successfully",
+  "data": [
+    {
+      "id": "1",
+      "message": "I need this car for a wedding event",
+      "status": "PENDING",
+      "reject_reason": null,
+      "created_at": "2026-01-03T10:00:00.000Z",
+      "updated_at": "2026-01-03T10:00:00.000Z",
+      "car": {
+        "id": "1",
+        "car_name": "Swift Dzire",
+        "category": "TAXI",
+        "transmission": "MANUAL",
+        "fuel_type": "PETROL",
+        "rate_type": "24HR",
+        "rate_amount": 1200.00,
+        "deposit_amount": 5000.00,
+        "purposes": ["SELF_DRIVE", "CORPORATE"],
+        "instructions": "Please return with full tank",
+        "is_active": true,
+        "images": [
+          {
+            "id": 1,
+            "image_url": "https://s3.../cars/images/1.jpg",
+            "is_primary": true
+          }
+        ]
+      },
+      "driver": {
+        "id": "3",
+        "full_name": "John Doe",
+        "phone_number": "+919876543210",
+        "profile_image_url": "https://s3.../profiles/john.jpg",
+        "kyc_verified": true
+      }
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 8,
+    "total_pages": 1
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+
+---
+
+### 5.3 Update Booking Request Status
+
+Accept or reject a booking request (OPERATOR only).
+
+**Endpoint:** `PUT /booking-requests/:id/status`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** OPERATOR
+
+**URL Parameters:**
+
+| Parameter | Type   | Description        |
+|-----------|--------|--------------------|
+| `id`      | number | Booking request ID |
+
+**Request Body:**
+
+| Field           | Type   | Required | Description                              |
+|-----------------|--------|----------|------------------------------------------|
+| `status`        | string | Yes      | `ACCEPTED` or `REJECTED`                 |
+| `reject_reason` | string | No       | Reason for rejection (max 500 chars)     |
+
+**Validations:**
+- `status`: Required, must be ACCEPTED or REJECTED
+- `reject_reason`: Optional, only allowed when status is REJECTED
+- Only operator who owns the car can update
+- Only PENDING requests can be updated
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is OPERATOR (requireRole)
+4. Validate request body
+5. Find booking request
+6. Verify operator owns the car
+7. Verify request is PENDING
+8. Update status and reject_reason
+9. Return updated request with full details
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Booking request accepted successfully",
+  "data": {
+    "id": "1",
+    "message": "I need this car for a wedding event",
+    "status": "ACCEPTED",
+    "reject_reason": null,
+    "created_at": "2026-01-03T10:00:00.000Z",
+    "updated_at": "2026-01-03T11:00:00.000Z",
+    "car": { ... },
+    "driver": { ... }
+  }
+}
+```
+
+**Rejection Response (200):**
+```json
+{
+  "success": true,
+  "message": "Booking request rejected successfully",
+  "data": {
+    "id": "1",
+    "message": "I need this car for a wedding event",
+    "status": "REJECTED",
+    "reject_reason": "Car is not available for this period",
+    "created_at": "2026-01-03T10:00:00.000Z",
+    "updated_at": "2026-01-03T11:00:00.000Z",
+    "car": { ... },
+    "driver": { ... }
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Status is required | Missing status |
+| 400 | Status must be either ACCEPTED or REJECTED | Invalid status |
+| 400 | Cannot update request. Current status is ACCEPTED | Already processed |
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | Access denied | Not an operator |
+| 403 | You do not have permission to update this request | Not owner of car |
+| 404 | Booking request not found | Invalid request ID |
+
+---
+
+### 5.4 Cancel Booking Request
+
+Cancel a pending booking request (DRIVER only).
+
+**Endpoint:** `DELETE /booking-requests/:id`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** DRIVER
+
+**URL Parameters:**
+
+| Parameter | Type   | Description        |
+|-----------|--------|--------------------|
+| `id`      | number | Booking request ID |
+
+**Validations:**
+- Only driver who created the request can cancel
+- Only PENDING requests can be cancelled
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is DRIVER (requireRole)
+4. Find booking request
+5. Verify driver owns the request
+6. Verify request is PENDING
+7. Delete the request
+8. Return success
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Booking request cancelled successfully"
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Cannot cancel request. Current status is ACCEPTED | Already processed |
+| 401 | Unauthorized | Missing/invalid token |
+| 403 | KYC verification required | KYC not approved |
+| 403 | Access denied | Not a driver |
+| 403 | You do not have permission to cancel this request | Not owner of request |
+| 404 | Booking request not found | Invalid request ID |
+
+---
+
+### 5.5 Get Pending Request Count
+
+Get count of pending requests for current driver.
+
+**Endpoint:** `GET /booking-requests/pending-count`  
+**Auth Required:** Yes  
+**KYC Required:** Yes  
+**Role Required:** DRIVER
+
+**Logic:**
+1. Verify JWT token (authMiddleware)
+2. Verify KYC approved (requireKyc)
+3. Verify role is DRIVER (requireRole)
+4. Count pending requests for driver
+5. Return count
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Pending request count fetched successfully",
+  "data": {
+    "pending_count": 3
+  }
+}
+```
 
 ---
 
@@ -696,7 +1364,7 @@ documents[0][back_doc]: <file>
 
 ```
 ┌─────────────────┐     ┌─────────────────┐
-│     roles       ���     │     users       │
+│     roles       │     │     users       │
 ├─────────────────┤     ├─────────────────┤
 │ id (PK)         │◄────│ role_id (FK)    │
 │ code            │     │ id (PK)         │
@@ -715,74 +1383,72 @@ documents[0][back_doc]: <file>
                         │ deleted_at      │
                         └────────┬────────┘
                                  │
-                                 │ 1:N
-                                 ▼
-                        ┌─────────────────┐
-                        │ user_identity   │
-                        ├─────────────────┤
-                        │ id (PK)         │
-                        │ user_id (FK)    │
-                        │ document_type   │
-                        │ document_hash   │
-                        │ front_doc_url   │
-                        │ back_doc_url    │
-                        │ status          │
-                        │ reject_reason   │
-                        │ created_at      │
-                        │ updated_at      │
-                        └─────────────────┘
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+              ▼                  ▼                  ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│ user_identity   │   │     cars        │   │booking_requests │
+├─────────────────┤   ├─────────────────┤   ├─────────────────┤
+│ id (PK)         │   │ id (PK)         │   │ id (PK)         │
+│ user_id (FK)    │   │ operator_id(FK) │   │ car_id (FK)     │
+│ document_type   │   │ car_name        │   │ driver_id (FK)  │
+│ document_hash   │   │ category        │   │ operator_id(FK) │
+│ front_doc_url   │   │ transmission    │   │ message         │
+│ back_doc_url    │   │ fuel_type       │   │ status          │
+│ status          │   │ rate_type       │   │ reject_reason   │
+│ reject_reason   │   │ rate_amount     │   │ created_at      │
+│ created_at      │   │ deposit_amount  │   │ updated_at      │
+│ updated_at      │   │ purposes        │   └─────────────────┘
+└─────────────────┘   │ instructions    │
+                      │ rc_front_url    │
+                      │ rc_back_url     │
+                      │ is_active       │
+                      │ created_at      │
+                      │ updated_at      │
+                      └────────┬────────┘
+                               │
+                               ▼
+                      ┌─────────────────┐
+                      │   car_images    │
+                      ├─────────────────┤
+                      │ id (PK)         │
+                      │ car_id (FK)     │
+                      │ image_url       │
+                      │ is_primary      │
+                      │ created_at      │
+                      └─────────────────┘
 ```
 
-### Roles Table
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | SMALLINT | Primary key |
-| code | VARCHAR(30) | DRIVER, OPERATOR, ADMIN |
-| name | VARCHAR(50) | Display name |
-| created_at | TIMESTAMP | Creation time |
-
-**Seed Data:**
-| id | code | name |
-|----|------|------|
-| 1 | DRIVER | Driver |
-| 2 | OPERATOR | Operator |
-| 3 | ADMIN | Admin |
-
-### Users Table
+### Cars Table
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | BIGINT | Primary key |
-| role_id | SMALLINT | FK to roles |
-| phone_number | VARCHAR(15) | Unique, international format |
-| full_name | VARCHAR(100) | User's full name |
-| address | TEXT | Complete address |
-| agency_name | VARCHAR(150) | Agency name (for operators) |
-| profile_image_url | TEXT | S3 URL |
-| dob | VARCHAR(15) | Date of birth |
-| fcm_token | TEXT | Firebase Cloud Messaging token |
-| is_active | BOOLEAN | Account status |
-| kyc_status | VARCHAR(20) | PENDING, APPROVED, REJECTED |
-| kyc_reject_reason | TEXT | Reason if rejected |
+| operator_id | BIGINT | FK to users |
+| car_name | VARCHAR(100) | Car name/model |
+| category | VARCHAR(20) | TAXI / PRIVATE |
+| transmission | VARCHAR(20) | MANUAL / AUTOMATIC |
+| fuel_type | VARCHAR(20) | PETROL / DIESEL / CNG / ELECTRIC |
+| rate_type | VARCHAR(10) | 12HR / 24HR |
+| rate_amount | DECIMAL(10,2) | Rate amount |
+| deposit_amount | DECIMAL(10,2) | Deposit amount (nullable) |
+| purposes | TEXT[] | Array of purposes |
+| instructions | TEXT | Instructions for drivers |
+| rc_front_url | TEXT | RC front image URL |
+| rc_back_url | TEXT | RC back image URL |
+| is_active | BOOLEAN | Active status |
 | created_at | TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | Last update time |
-| deleted_at | TIMESTAMP | Soft delete time |
 
-### User Identity Table
+### Car Images Table
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | BIGINT | Primary key |
-| user_id | BIGINT | FK to users |
-| document_type | VARCHAR(30) | AADHAAR, DRIVING_LICENSE, PAN_CARD |
-| document_number_hash | TEXT | SHA-256 hash (unique) |
-| front_doc_url | TEXT | S3 URL |
-| back_doc_url | TEXT | S3 URL (nullable) |
-| status | VARCHAR(20) | PENDING, APPROVED, REJECTED |
-| reject_reason | TEXT | Reason if rejected |
+| car_id | BIGINT | FK to cars |
+| image_url | TEXT | Image URL |
+| is_primary | BOOLEAN | Primary image flag |
 | created_at | TIMESTAMP | Creation time |
-| updated_at | TIMESTAMP | Last update time |
 
 ---
 
@@ -804,20 +1470,8 @@ documents[0][back_doc]: <file>
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                      BACKEND API                              │
-├──────────────────────────────────────────────────────────────┤
-│  1. Verify Firebase ID Token                                  │
-│  2. Extract phone number from token                           │
-│  3. Find or create user in database                           │
-│  4. Save FCM token for push notifications                     │
-│  5. Generate JWT access token                                 │
-│  6. Return token + user data + onboarding status              │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
 │                    FLUTTER NAVIGATION                         │
-├──────────────────────────────────────────────────────────────┤
+├────────────────────────────────────���─────────────────────────┤
 │  Check onboarding status:                                     │
 │                                                               │
 │  if (!role_selected)     → Role Selection Screen              │
@@ -828,88 +1482,95 @@ documents[0][back_doc]: <file>
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### KYC Flow
+### Car Listing Flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  POST /kyc/submit (Initial Submission)                      │
-├─────────────────────────────────────────────────────────────┤
-│  Send all data in single request:                           │
-│  • Personal info: full_name, address, agency_name           │
-│  • Profile image                                            │
-│  • Documents: Aadhaar (front + back)                        │
-│  • Documents: Driving License (front + back)                │
-│                                                             │
-│  Backend:                                                   │
-│  • Saves personal info to users table                       │
-│  • Uploads images to S3                                     │
-│  • Hashes document numbers (SHA-256)                        │
-│  • Saves documents to user_identity table                   │
-│  • Sets kyc_status = 'PENDING'                              │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Admin Review (Admin Panel)                                 │
-├─────────────────────────────────────────────────────────────┤
-│  • Admin views pending KYC requests                         │
-│  • Admin reviews documents                                  │
-│  • Admin approves or rejects each document                  │
-│  • Admin approves or rejects overall KYC                    │
-└─────────────────────────────────────��───────────────────────┘
-                         │
-            ┌────────────┴────────────┐
-            ▼                         ▼
-┌───────────────────────┐   ┌───────────────────────┐
-│  If Approved          │   │  If Rejected          │
-├───────────────────────┤   ├───────────────────────┤
-│  kyc_status =         │   │  kyc_status =         │
-│    'APPROVED'         │   │    'REJECTED'         │
-│                       │   │  kyc_reject_reason =  │
-│  User can access      │   │    'Reason...'        │
-│  all features         │   │                       │
-│                       │   │  User calls           │
-│                       │   │  GET /kyc/status      │
-│                       │   │  to see which docs    │
-│                       │   │  were rejected        │
-│                       │   │                       │
-│                       │   │  User calls           │
-│                       │   │  POST /kyc/submit     │
-│                       │   │  with only rejected   │
-│                       │   │  documents            │
-└───────────────────────┘   └───────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    DRIVER FLOW                                │
+├──────────────────────────────────────────────────────────────┤
+│  GET /cars                                                    │
+│  • Shows only active cars from all operators                  │
+│  • Can filter by category, fuel, transmission, price, etc.    │
+│  • Returns paginated list with primary image                  │
+│                                                               │
+│  GET /cars/:id                                                │
+│  • Shows full car details                                     │
+│  • Shows operator contact info                                │
+│  • Can only view active cars                                  │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                   OPERATOR FLOW                               │
+├──────────────────────────────────────────────────────────────┤
+│  GET /cars                                                    │
+│  • Shows only their own cars                                  │
+│  • Shows both active and inactive cars                        │
+│  • Can filter by is_active status                             │
+│                                                               │
+│  POST /cars                                                   │
+│  • Create new car listing                                     │
+│  • Upload RC documents and car images                         │
+│                                                               │
+│  PUT /cars/:id                                                │
+│  • Update car details                                         │
+│  • Change active/inactive status                              │
+│  • Add/remove images                                          │
+│                                                               │
+│  DELETE /cars/:id                                             │
+│  • Delete car listing                                         │
+│  • Removes all images from S3                                 │
+└──────────────────────────────────────────────────────────────┘
 ```
 
----
+### Booking Request Flow
 
-## Environment Variables
+```
+┌───────────────────���──────────────────────────────────────────┐
+│                    DRIVER FLOW                                │
+├──────────────────────────────────────────────────────────────┤
+│  1. Browse cars (GET /cars)                                   │
+│  2. View car details (GET /cars/:id)                          │
+│  3. Create booking request (POST /booking-requests)           │
+│     • Sends request to operator                               │
+│     • Status: PENDING                                         │
+│  4. Track requests (GET /booking-requests)                    │
+│     • Filter by status: PENDING, ACCEPTED, REJECTED           │
+│  5. Cancel pending request (DELETE /booking-requests/:id)     │
+│     • Only PENDING requests can be cancelled                  │
+└──────────────────────────────────────────────────────────────┘
 
-```env
-# Server
-NODE_ENV=development
-PORT=3000
+┌──────────────────────────────────────────────────────────────┐
+│                   OPERATOR FLOW                               │
+├──────────────────────────────────────────────────────────────┤
+│  1. View incoming requests (GET /booking-requests)            │
+│     • Filter by status or car_id                              │
+│     • See driver details + KYC verified badge                 │
+│  2. Accept request (PUT /booking-requests/:id/status)         │
+│     • status: "ACCEPTED"                                      │
+│     • Driver gets notified                                    │
+│  3. Reject request (PUT /booking-requests/:id/status)         │
+│     • status: "REJECTED"                                      │
+│     • reject_reason: "Car not available"                      │
+│     • Driver gets notified with reason                        │
+└──────────────────────────────────────────────────────────────┘
 
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=safarmitra
-DB_USER=postgres
-DB_PASSWORD=
-
-# JWT
-JWT_SECRET=your-secret-key
-JWT_EXPIRES_IN=7d
-
-# Firebase
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
-
-# AWS S3
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=ap-south-1
-AWS_S3_BUCKET=safarmitra-uploads
+┌──────────────────────────────────────────────────────────────┐
+│                 REQUEST STATUS FLOW                           │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌─────────┐    Accept    ┌──────────┐                       │
+│  │ PENDING │─────────────►│ ACCEPTED │                       │
+│  └────┬────┘              └──────────┘                       │
+│       │                                                       │
+│       │ Reject                                                │
+│       │                                                       │
+│       ▼                                                       │
+│  ┌──────────┐                                                │
+│  │ REJECTED │                                                │
+│  └──────────┘                                                │
+│                                                               │
+│  Note: Only PENDING requests can be updated or cancelled      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -918,89 +1579,125 @@ AWS_S3_BUCKET=safarmitra-uploads
 
 ### All Endpoints Summary
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/auth/login` | No | Login/Register with Firebase token |
-| POST | `/auth/select-role` | Yes | Select DRIVER or OPERATOR role |
-| POST | `/auth/logout` | Yes | Logout user |
-| GET | `/users/me` | Yes | Get current user profile |
-| PUT | `/users/me` | Yes | Update profile (info + image) |
-| GET | `/users/profile/:id` | Yes | Get public profile by ID |
-| GET | `/kyc/status` | Yes | Get KYC status & documents |
-| POST | `/kyc/submit` | Yes | Submit/Update KYC |
+| Method | Endpoint | Auth | KYC | Role | Description |
+|--------|----------|------|-----|------|-------------|
+| POST | `/auth/login` | No | No | - | Login/Register |
+| POST | `/auth/select-role` | Yes | No | - | Select role |
+| POST | `/auth/logout` | Yes | No | - | Logout |
+| GET | `/users/me` | Yes | No | - | Get my profile |
+| PUT | `/users/me` | Yes | No | - | Update my profile |
+| GET | `/users/profile/:id` | Yes | No | - | Get user by ID |
+| GET | `/kyc/status` | Yes | No | - | Get KYC status |
+| POST | `/kyc/submit` | Yes | No | - | Submit/Update KYC |
+| GET | `/cars` | Yes | Yes | - | List cars |
+| GET | `/cars/:id` | Yes | Yes | - | Get car by ID |
+| POST | `/cars` | Yes | Yes | OPERATOR | Create car |
+| PUT | `/cars/:id` | Yes | Yes | OPERATOR | Update car |
+| DELETE | `/cars/:id` | Yes | Yes | OPERATOR | Delete car |
+| POST | `/booking-requests` | Yes | Yes | DRIVER | Create booking request |
+| GET | `/booking-requests` | Yes | Yes | - | List booking requests |
+| GET | `/booking-requests/pending-count` | Yes | Yes | DRIVER | Get pending count |
+| PUT | `/booking-requests/:id/status` | Yes | Yes | OPERATOR | Accept/Reject request |
+| DELETE | `/booking-requests/:id` | Yes | Yes | DRIVER | Cancel request |
 
-**Total: 8 endpoints**
+**Total: 18 endpoints**
 
 ---
 
 ## Testing with cURL
 
-### Login
+### List Cars (Driver)
 ```bash
-curl -X POST http://localhost:3000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"firebase_token": "FIREBASE_ID_TOKEN", "fcm_token": "FCM_TOKEN"}'
-```
-
-### Select Role
-```bash
-curl -X POST http://localhost:3000/api/v1/auth/select-role \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -d '{"role": "DRIVER"}'
-```
-
-### Get My Profile
-```bash
-curl -X GET http://localhost:3000/api/v1/users/me \
+curl -X GET "http://localhost:3000/api/v1/cars?category=TAXI&fuel_type=PETROL&page=1&limit=10" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-### Update My Profile
+### List Cars (Operator - own cars)
 ```bash
-curl -X PUT http://localhost:3000/api/v1/users/me \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -F "full_name=John Doe" \
-  -F "address=123 Main St" \
-  -F "profile_image=@/path/to/image.jpg"
-```
-
-### Get KYC Status
-```bash
-curl -X GET http://localhost:3000/api/v1/kyc/status \
+curl -X GET "http://localhost:3000/api/v1/cars?is_active=true" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-### Submit KYC (Initial)
+### Get Car by ID
 ```bash
-curl -X POST http://localhost:3000/api/v1/kyc/submit \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -F "full_name=John Doe" \
-  -F "address=123 Main Street" \
-  -F "profile_image=@/path/to/profile.jpg" \
-  -F "documents[0][document_type]=AADHAAR" \
-  -F "documents[0][document_number]=1234-5678-9012" \
-  -F "documents[0][front_doc]=@/path/to/aadhaar_front.jpg" \
-  -F "documents[0][back_doc]=@/path/to/aadhaar_back.jpg" \
-  -F "documents[1][document_type]=DRIVING_LICENSE" \
-  -F "documents[1][document_number]=DL-1234567890" \
-  -F "documents[1][front_doc]=@/path/to/dl_front.jpg" \
-  -F "documents[1][back_doc]=@/path/to/dl_back.jpg"
+curl -X GET http://localhost:3000/api/v1/cars/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-### Resubmit KYC (Only rejected document)
+### Create Car (Operator)
 ```bash
-curl -X POST http://localhost:3000/api/v1/kyc/submit \
+curl -X POST http://localhost:3000/api/v1/cars \
   -H "Authorization: Bearer YOUR_TOKEN" \
-  -F "documents[0][document_type]=DRIVING_LICENSE" \
-  -F "documents[0][document_number]=DL-1234567890" \
-  -F "documents[0][front_doc]=@/path/to/dl_front_new.jpg" \
-  -F "documents[0][back_doc]=@/path/to/dl_back_new.jpg"
+  -F "car_name=Swift Dzire" \
+  -F "category=TAXI" \
+  -F "transmission=MANUAL" \
+  -F "fuel_type=PETROL" \
+  -F "rate_type=24HR" \
+  -F "rate_amount=1200" \
+  -F "deposit_amount=5000" \
+  -F "purposes=SELF_DRIVE,CORPORATE" \
+  -F "instructions=Please return with full tank" \
+  -F "rc_front=@/path/to/rc_front.jpg" \
+  -F "rc_back=@/path/to/rc_back.jpg" \
+  -F "images=@/path/to/car1.jpg" \
+  -F "images=@/path/to/car2.jpg" \
+  -F "primary_image_index=0"
 ```
 
-### Logout
+### Update Car (Operator)
 ```bash
-curl -X POST http://localhost:3000/api/v1/auth/logout \
+curl -X PUT http://localhost:3000/api/v1/cars/1 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "rate_amount=1500" \
+  -F "is_active=false" \
+  -F "remove_images=2,3"
+```
+
+### Delete Car (Operator)
+```bash
+curl -X DELETE http://localhost:3000/api/v1/cars/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Create Booking Request (Driver)
+```bash
+curl -X POST http://localhost:3000/api/v1/booking-requests \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"car_id": 1, "message": "I need this car for a wedding event"}'
+```
+
+### List Booking Requests
+```bash
+curl -X GET "http://localhost:3000/api/v1/booking-requests?status=PENDING&page=1&limit=10" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Get Pending Request Count (Driver)
+```bash
+curl -X GET http://localhost:3000/api/v1/booking-requests/pending-count \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Accept Booking Request (Operator)
+```bash
+curl -X PUT http://localhost:3000/api/v1/booking-requests/1/status \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "ACCEPTED"}'
+```
+
+### Reject Booking Request (Operator)
+```bash
+curl -X PUT http://localhost:3000/api/v1/booking-requests/1/status \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "REJECTED", "reject_reason": "Car is not available"}'
+```
+
+### Cancel Booking Request (Driver)
+```bash
+curl -X DELETE http://localhost:3000/api/v1/booking-requests/1 \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
