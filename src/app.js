@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const path = require('path');
 const { errorHandler, notFoundHandler } = require('./middlewares/errorHandler');
 const routes = require('./routes');
 
@@ -21,6 +22,10 @@ if (process.env.NODE_ENV === 'development') {
 // Body parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve local uploads directory (for development without AWS)
+// Files will be accessible at: http://localhost:3000/uploads/folder/filename.ext
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

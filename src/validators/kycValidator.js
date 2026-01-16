@@ -50,11 +50,34 @@ const validateKycSubmit = (req, res, next) => {
 };
 
 /**
+ * Convert files array to object for easier access
+ * multer.any() returns array, we need object with fieldname as key
+ */
+const convertFilesToObject = (filesArray) => {
+  const filesObj = {};
+  if (Array.isArray(filesArray)) {
+    filesArray.forEach((file) => {
+      if (!filesObj[file.fieldname]) {
+        filesObj[file.fieldname] = [];
+      }
+      filesObj[file.fieldname].push(file);
+    });
+  }
+  return filesObj;
+};
+
+/**
  * Validate that documents have required files
  */
 const validateDocumentFiles = (req, res, next) => {
   const { documents } = req.body;
-  const files = req.files || {};
+  
+  // Convert files array to object for easier access
+  const filesArray = req.files || [];
+  const files = convertFilesToObject(filesArray);
+  
+  // Attach converted files object to request for use in controller/service
+  req.files = files;
 
   if (documents && Array.isArray(documents)) {
     for (let i = 0; i < documents.length; i++) {

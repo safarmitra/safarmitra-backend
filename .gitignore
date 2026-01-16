@@ -22,3 +22,7 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Uploads (local development files)
+uploads/*
+!uploads/.gitkeep
