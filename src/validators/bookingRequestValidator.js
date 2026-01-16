@@ -3,7 +3,7 @@
 const Joi = require('joi');
 
 /**
- * Validation schema for creating a booking request
+ * Validation schema for creating a booking request (Driver requesting a car)
  */
 const createBookingRequestSchema = Joi.object({
   car_id: Joi.number()
@@ -15,6 +15,38 @@ const createBookingRequestSchema = Joi.object({
       'number.integer': 'Car ID must be an integer',
       'number.positive': 'Car ID must be a positive number',
       'any.required': 'Car ID is required',
+    }),
+  message: Joi.string()
+    .max(1000)
+    .allow('', null)
+    .messages({
+      'string.max': 'Message cannot exceed 1000 characters',
+    }),
+});
+
+/**
+ * Validation schema for operator inviting a driver
+ */
+const inviteDriverSchema = Joi.object({
+  car_id: Joi.number()
+    .integer()
+    .positive()
+    .required()
+    .messages({
+      'number.base': 'Car ID must be a number',
+      'number.integer': 'Car ID must be an integer',
+      'number.positive': 'Car ID must be a positive number',
+      'any.required': 'Car ID is required',
+    }),
+  driver_id: Joi.number()
+    .integer()
+    .positive()
+    .required()
+    .messages({
+      'number.base': 'Driver ID must be a number',
+      'number.integer': 'Driver ID must be an integer',
+      'number.positive': 'Driver ID must be a positive number',
+      'any.required': 'Driver ID is required',
     }),
   message: Joi.string()
     .max(1000)
@@ -88,10 +120,39 @@ const listBookingRequestsSchema = Joi.object({
 });
 
 /**
- * Middleware to validate create booking request
+ * Middleware to validate create booking request (Driver)
  */
 const validateCreateBookingRequest = (req, res, next) => {
   const { error, value } = createBookingRequestSchema.validate(req.body, {
+    abortEarly: false,
+    stripUnknown: true,
+  });
+
+  if (error) {
+    const errors = error.details.map((detail) => ({
+      field: detail.path.join('.'),
+      message: detail.message,
+    }));
+
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      error: {
+        code: 'VALIDATION_ERROR',
+        details: errors,
+      },
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
+/**
+ * Middleware to validate invite driver (Operator)
+ */
+const validateInviteDriver = (req, res, next) => {
+  const { error, value } = inviteDriverSchema.validate(req.body, {
     abortEarly: false,
     stripUnknown: true,
   });
@@ -176,6 +237,7 @@ const validateListBookingRequests = (req, res, next) => {
 
 module.exports = {
   validateCreateBookingRequest,
+  validateInviteDriver,
   validateUpdateStatus,
   validateListBookingRequests,
 };

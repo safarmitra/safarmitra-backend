@@ -90,10 +90,34 @@ const kycMiddleware = (req, res, next) => {
  */
 const requireKyc = kycMiddleware;
 
+/**
+ * Require Admin role middleware
+ */
+const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return sendError(res, 'Unauthorized', 401, 'UNAUTHORIZED');
+  }
+
+  if (!req.user.roleCode) {
+    return sendError(res, 'Please select a role first', 403, 'ROLE_NOT_SELECTED');
+  }
+
+  if (req.user.roleCode !== 'ADMIN') {
+    return sendError(res, 'Access denied. Admin privileges required', 403, 'FORBIDDEN');
+  }
+
+  next();
+};
+
+// Alias for authMiddleware
+const authenticate = authMiddleware;
+
 module.exports = {
   authMiddleware,
+  authenticate,
   roleMiddleware,
   requireRole,
   kycMiddleware,
   requireKyc,
+  requireAdmin,
 };

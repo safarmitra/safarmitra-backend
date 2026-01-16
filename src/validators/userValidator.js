@@ -76,7 +76,46 @@ const validateProfileImage = (req, res, next) => {
   next();
 };
 
+/**
+ * Validation schema for listing drivers
+ */
+const listDriversSchema = Joi.object({
+  search: Joi.string().max(100).allow('', null),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(50).default(10),
+});
+
+/**
+ * Validate list drivers query params
+ */
+const validateListDrivers = (req, res, next) => {
+  const { error, value } = listDriversSchema.validate(req.query, {
+    abortEarly: false,
+    stripUnknown: true,
+  });
+
+  if (error) {
+    const details = error.details.map((detail) => ({
+      field: detail.path.join('.'),
+      message: detail.message,
+    }));
+
+    return res.status(400).json({
+      success: false,
+      message: 'Validation error',
+      error: {
+        code: 'VALIDATION_ERROR',
+        details,
+      },
+    });
+  }
+
+  req.query = value;
+  next();
+};
+
 module.exports = {
   validateUpdateProfile: validate(updateProfileSchema),
   validateProfileImage,
+  validateListDrivers,
 };

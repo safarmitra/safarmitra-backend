@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const userController = require('../controllers/userController');
-const { authMiddleware } = require('../middlewares/authMiddleware');
-const { validateUpdateProfile, validateProfileImage } = require('../validators/userValidator');
+const { authMiddleware, requireRole, requireKyc } = require('../middlewares/authMiddleware');
+const { validateUpdateProfile, validateProfileImage, validateListDrivers } = require('../validators/userValidator');
 
 // Configure multer for memory storage
 const upload = multer({
@@ -30,5 +30,14 @@ router.put(
 
 // GET /users/profile/:id - Get public user profile by ID
 router.get('/profile/:id', userController.getProfileById);
+
+// GET /users/drivers - List verified drivers (for operators to invite)
+router.get(
+  '/drivers',
+  requireKyc,
+  requireRole('OPERATOR'),
+  validateListDrivers,
+  userController.listDrivers
+);
 
 module.exports = router;

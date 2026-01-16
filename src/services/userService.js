@@ -1,4 +1,5 @@
 const { User, Role } = require('../models');
+const { Op } = require('sequelize');
 const uploadService = require('./uploadService');
 
 /**
@@ -123,9 +124,74 @@ const formatUserProfile = (user) => {
   };
 };
 
+/**
+ * List verified drivers (for operators to invite)
+ * 
+ * Logic:
+ * 1. Find all users with DRIVER role
+ * 2. Filter by KYC approved and active
+ * 3. Apply search filter if provided
+ * 4. Return paginated list
+ */
+const listDrivers = async (filters) => {
+  const { search, page = 1, limit = 10 } = filters;
+  const offset = (page - 1) * limit;
+
+  // Get driver role
+  const driverRole = await Role.findOne({ where: { code: 'DRIVER' } });
+
+  if (!driverRole) {
+    return {
+      data: [],
+      meta: { page, limit, total: 0, total_pages: 0 },
+    };
+  }
+
+  const where = {
+    role_id: driverRole.id,
+    kyc_status: 'APPROVED',
+    is_active: true,
+  };
+
+  // Search filter
+  if (search) {
+    where[Op.or] = [
+      { full_name: { [Op.iLike]: `%${search}%` } },
+      { phone_number: { [Op.iLike]: `%${search}%` } },
+    ];
+  }
+
+  const { count, rows } = await User.findAndCountAll({
+    where,
+    attributes: ['id', 'full_name', 'phone_number', 'profile_image_url', 'kyc_status'],
+    order: [['full_name', 'ASC']],
+    limit,
+    offset,
+  });
+
+  const drivers = rows.map((user) => ({
+    id: user.id.toString(),
+    full_name: user.full_name,
+    phone_number: user.phone_number,
+    profile_image_url: user.profile_image_url,
+    kyc_verified: user.kyc_status === 'APPROVED',
+  }));
+
+  return {
+    data: drivers,
+    meta: {
+      page,
+      limit,
+      total: count,
+      total_pages: Math.ceil(count / limit),
+    },
+  };
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   getPublicProfile,
   formatUserProfile,
+  listDrivers,
 };

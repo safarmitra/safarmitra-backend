@@ -35,6 +35,12 @@ module.exports = (sequelize) => {
           key: 'id',
         },
       },
+      initiated_by: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'DRIVER',
+        comment: 'DRIVER or OPERATOR - who initiated the request',
+      },
       message: {
         type: DataTypes.TEXT,
       },

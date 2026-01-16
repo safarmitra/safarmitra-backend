@@ -48,8 +48,28 @@ const getProfileById = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /users/drivers
+ * List verified drivers (for operators to invite)
+ */
+const listDrivers = async (req, res, next) => {
+  try {
+    const result = await userService.listDrivers(req.query);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Drivers fetched successfully',
+      data: result.data,
+      meta: result.meta,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getMyProfile,
   updateMyProfile,
   getProfileById,
+  listDrivers,
 };
