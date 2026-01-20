@@ -93,45 +93,6 @@ const listBookingRequestsSchema = Joi.object({
 });
 
 /**
- * Validation schema for creating location
- */
-const createLocationSchema = Joi.object({
-  area_name: Joi.string().max(100).required().messages({
-    'string.max': 'Area name cannot exceed 100 characters',
-    'any.required': 'Area name is required',
-  }),
-  city_name: Joi.string().max(100).required().messages({
-    'string.max': 'City name cannot exceed 100 characters',
-    'any.required': 'City name is required',
-  }),
-  is_active: Joi.boolean().default(true),
-});
-
-/**
- * Validation schema for updating location
- */
-const updateLocationSchema = Joi.object({
-  area_name: Joi.string().max(100).messages({
-    'string.max': 'Area name cannot exceed 100 characters',
-  }),
-  city_name: Joi.string().max(100).messages({
-    'string.max': 'City name cannot exceed 100 characters',
-  }),
-  is_active: Joi.boolean(),
-});
-
-/**
- * Validation schema for listing locations
- */
-const listLocationsSchema = Joi.object({
-  search: Joi.string().max(100).allow('', null),
-  city_name: Joi.string().max(100).allow('', null),
-  is_active: Joi.boolean(),
-  page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(50),
-});
-
-/**
  * Validation schema for listing pending KYC
  */
 const listPendingKycSchema = Joi.object({
@@ -267,69 +228,6 @@ const validateListBookingRequests = (req, res, next) => {
   next();
 };
 
-const validateCreateLocation = (req, res, next) => {
-  const { error, value } = createLocationSchema.validate(req.body, {
-    abortEarly: false,
-    stripUnknown: true,
-  });
-
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      error: {
-        code: 'VALIDATION_ERROR',
-        details: error.details.map((d) => ({ field: d.path.join('.'), message: d.message })),
-      },
-    });
-  }
-
-  req.body = value;
-  next();
-};
-
-const validateUpdateLocation = (req, res, next) => {
-  const { error, value } = updateLocationSchema.validate(req.body, {
-    abortEarly: false,
-    stripUnknown: true,
-  });
-
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      error: {
-        code: 'VALIDATION_ERROR',
-        details: error.details.map((d) => ({ field: d.path.join('.'), message: d.message })),
-      },
-    });
-  }
-
-  req.body = value;
-  next();
-};
-
-const validateListLocations = (req, res, next) => {
-  const { error, value } = listLocationsSchema.validate(req.query, {
-    abortEarly: false,
-    stripUnknown: true,
-  });
-
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      error: {
-        code: 'VALIDATION_ERROR',
-        details: error.details.map((d) => ({ field: d.path.join('.'), message: d.message })),
-      },
-    });
-  }
-
-  req.query = value;
-  next();
-};
-
 const validateListPendingKyc = (req, res, next) => {
   const { error, value } = listPendingKycSchema.validate(req.query, {
     abortEarly: false,
@@ -358,8 +256,5 @@ module.exports = {
   validateUpdateDocumentStatus,
   validateListCars,
   validateListBookingRequests,
-  validateCreateLocation,
-  validateUpdateLocation,
-  validateListLocations,
   validateListPendingKyc,
 };

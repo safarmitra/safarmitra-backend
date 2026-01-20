@@ -18,9 +18,9 @@
    - [KYC Management APIs](#3-kyc-management-apis)
    - [Car Management APIs](#4-car-management-apis)
    - [Booking Request APIs](#5-booking-request-apis)
-   - [Location Management APIs](#6-location-management-apis)
-6. [Database Schema](#database-schema)
-7. [Admin Workflows](#admin-workflows)
+6. [Static Location Data](#static-location-data)
+7. [Database Schema](#database-schema)
+8. [Admin Workflows](#admin-workflows)
 
 ---
 
@@ -32,8 +32,9 @@ The Admin Panel provides system administrators with tools to:
 - **Manage Users** - View, suspend, and activate users
 - **Verify KYC** - Approve or reject user KYC documents
 - **Manage Cars** - Monitor and remove car listings
-- **Manage Locations** - Add, edit, and remove service locations
 - **Monitor Bookings** - View all booking requests
+
+> **Note:** Location data is now managed via static JSON files. See [Static Location Data](#static-location-data) section.
 
 ### Admin Role
 
@@ -68,22 +69,6 @@ Authorization: Bearer <admin_jwt_token>
   "exp": 1234567890
 }
 ```
-
-### Creating an Admin User
-
-Admins are created directly in the database:
-
-```sql
--- First, get the ADMIN role ID
-SELECT id FROM roles WHERE code = 'ADMIN';
-
--- Update an existing user to admin (replace values)
-UPDATE users 
-SET role_id = (SELECT id FROM roles WHERE code = 'ADMIN'),
-    kyc_status = 'APPROVED'
-WHERE phone_number = '+91XXXXXXXXXX';
-```
-
 ---
 
 ## Response Format
@@ -168,8 +153,7 @@ Get comprehensive platform statistics.
 4. Count users by KYC status
 5. Count cars by status
 6. Count booking requests by status
-7. Count locations
-8. Return aggregated statistics
+7. Return aggregated statistics
 
 **Success Response (200):**
 ```json
@@ -200,10 +184,6 @@ Get comprehensive platform statistics.
       "accepted": 4500,
       "rejected": 380,
       "today": 45
-    },
-    "locations": {
-      "total": 100,
-      "active": 95
     }
   }
 }
@@ -263,17 +243,6 @@ List all users with filters and pagination.
       "profile_image_url": "https://s3.../profiles/john.jpg",
       "documents_count": 2,
       "created_at": "2026-01-03T10:00:00.000Z"
-    },
-    {
-      "id": "2",
-      "phone_number": "+919876543211",
-      "full_name": "Jane Smith",
-      "role": "OPERATOR",
-      "kyc_status": "APPROVED",
-      "is_active": true,
-      "profile_image_url": "https://s3.../profiles/jane.jpg",
-      "documents_count": 3,
-      "created_at": "2026-01-02T10:00:00.000Z"
     }
   ],
   "meta": {
@@ -300,12 +269,6 @@ Get detailed user information including KYC documents and statistics.
 | Parameter | Type   | Description |
 |-----------|--------|-------------|
 | `id`      | number | User ID     |
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find user by ID with role and documents
-3. Calculate user statistics (cars, requests)
-4. Return complete user profile
 
 **Success Response (200):**
 ```json
@@ -334,15 +297,6 @@ Get detailed user information including KYC documents and statistics.
         "status": "PENDING",
         "reject_reason": null,
         "created_at": "2026-01-03T10:30:00.000Z"
-      },
-      {
-        "id": 2,
-        "document_type": "DRIVING_LICENSE",
-        "front_doc_url": "https://s3.../documents/dl_front.jpg",
-        "back_doc_url": "https://s3.../documents/dl_back.jpg",
-        "status": "PENDING",
-        "reject_reason": null,
-        "created_at": "2026-01-03T10:35:00.000Z"
       }
     ],
     "stats": {
@@ -372,12 +326,6 @@ Suspend or activate a user account.
 **Auth Required:** Yes  
 **Role Required:** ADMIN
 
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | User ID     |
-
 **Request Body:**
 
 | Field       | Type    | Required | Description                    |
@@ -385,34 +333,7 @@ Suspend or activate a user account.
 | `is_active` | boolean | Yes      | `true` to activate, `false` to suspend |
 | `reason`    | string  | No       | Reason for status change (max 500 chars) |
 
-**Validations:**
-- `is_active`: Required, must be boolean
-- `reason`: Optional, max 500 characters
-- Cannot modify admin users
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find user by ID
-3. Check user is not an admin
-4. Update is_active status
-5. Return updated status
-
-**Request Example (Suspend):**
-```json
-{
-  "is_active": false,
-  "reason": "Violation of platform terms and conditions"
-}
-```
-
-**Request Example (Activate):**
-```json
-{
-  "is_active": true
-}
-```
-
-**Success Response (200) - Suspended:**
+**Success Response (200):**
 ```json
 {
   "success": true,
@@ -423,28 +344,6 @@ Suspend or activate a user account.
   }
 }
 ```
-
-**Success Response (200) - Activated:**
-```json
-{
-  "success": true,
-  "message": "User activated successfully",
-  "data": {
-    "id": "1",
-    "is_active": true
-  }
-}
-```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 400 | is_active is required | Missing is_active |
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 403 | Cannot modify admin user status | Target is admin |
-| 404 | User not found | Invalid user ID |
 
 ---
 
@@ -466,13 +365,6 @@ List users with pending KYC verification.
 | `page`    | number | No       | 1       | Page number                           |
 | `limit`   | number | No       | 10      | Items per page (max: 50)              |
 
-**Logic:**
-1. Verify JWT token and admin role
-2. Filter users with kyc_status = 'PENDING'
-3. Apply role filter if provided
-4. Order by created_at ASC (oldest first)
-5. Return paginated results with documents summary
-
 **Success Response (200):**
 ```json
 {
@@ -490,11 +382,6 @@ List users with pending KYC verification.
         {
           "id": 1,
           "document_type": "AADHAAR",
-          "status": "PENDING"
-        },
-        {
-          "id": 2,
-          "document_type": "DRIVING_LICENSE",
           "status": "PENDING"
         }
       ],
@@ -520,12 +407,6 @@ Approve or reject a user's KYC verification.
 **Auth Required:** Yes  
 **Role Required:** ADMIN
 
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | User ID     |
-
 **Request Body:**
 
 | Field           | Type   | Required | Description                              |
@@ -535,33 +416,7 @@ Approve or reject a user's KYC verification.
 
 *Required when status is REJECTED
 
-**Validations:**
-- `status`: Required, must be APPROVED or REJECTED
-- `reject_reason`: Only allowed when status is REJECTED
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find user by ID
-3. Update kyc_status and kyc_reject_reason
-4. If APPROVED: Also approve all pending documents
-5. Return updated KYC status
-
-**Request Example (Approve):**
-```json
-{
-  "status": "APPROVED"
-}
-```
-
-**Request Example (Reject):**
-```json
-{
-  "status": "REJECTED",
-  "reject_reason": "Documents are not clear. Please upload high-quality images and resubmit."
-}
-```
-
-**Success Response (200) - Approved:**
+**Success Response (200):**
 ```json
 {
   "success": true,
@@ -574,29 +429,6 @@ Approve or reject a user's KYC verification.
 }
 ```
 
-**Success Response (200) - Rejected:**
-```json
-{
-  "success": true,
-  "message": "KYC rejected successfully",
-  "data": {
-    "id": "1",
-    "kyc_status": "REJECTED",
-    "kyc_reject_reason": "Documents are not clear. Please upload high-quality images and resubmit."
-  }
-}
-```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 400 | Status is required | Missing status |
-| 400 | Status must be either APPROVED or REJECTED | Invalid status |
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 404 | User not found | Invalid user ID |
-
 ---
 
 ### 3.3 Update Document Status
@@ -607,41 +439,12 @@ Approve or reject an individual KYC document.
 **Auth Required:** Yes  
 **Role Required:** ADMIN
 
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | Document ID |
-
 **Request Body:**
 
 | Field           | Type   | Required | Description                              |
 |-----------------|--------|----------|------------------------------------------|
 | `status`        | string | Yes      | `APPROVED` or `REJECTED`                 |
 | `reject_reason` | string | No*      | Reason for rejection (max 500 chars)     |
-
-*Required when status is REJECTED
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find document by ID
-3. Update status and reject_reason
-4. Return updated document status
-
-**Request Example (Approve):**
-```json
-{
-  "status": "APPROVED"
-}
-```
-
-**Request Example (Reject):**
-```json
-{
-  "status": "REJECTED",
-  "reject_reason": "Document image is blurry and unreadable"
-}
-```
 
 **Success Response (200):**
 ```json
@@ -656,16 +459,6 @@ Approve or reject an individual KYC document.
   }
 }
 ```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 400 | Status is required | Missing status |
-| 400 | Status must be either APPROVED or REJECTED | Invalid status |
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 404 | Document not found | Invalid document ID |
 
 ---
 
@@ -706,27 +499,10 @@ List all cars with filters.
       "rate_amount": 1200.00,
       "deposit_amount": 5000.00,
       "purposes": ["SELF_DRIVE", "CORPORATE"],
-      "instructions": "Please return with full tank",
-      "rc_front_url": "https://s3.../cars/rc/front.jpg",
-      "rc_back_url": "https://s3.../cars/rc/back.jpg",
       "is_active": true,
-      "images": [
-        {
-          "id": 1,
-          "image_url": "https://s3.../cars/images/1.jpg",
-          "is_primary": true
-        }
-      ],
-      "operator": {
-        "id": "5",
-        "full_name": "Jane Smith",
-        "agency_name": "XYZ Rentals",
-        "phone_number": "+919876543210",
-        "profile_image_url": "https://s3.../profiles/jane.jpg",
-        "kyc_verified": true
-      },
-      "created_at": "2026-01-03T10:00:00.000Z",
-      "updated_at": "2026-01-03T10:00:00.000Z"
+      "images": [...],
+      "operator": {...},
+      "created_at": "2026-01-03T10:00:00.000Z"
     }
   ],
   "meta": {
@@ -742,68 +518,17 @@ List all cars with filters.
 
 ### 4.2 Get Car Details
 
-Get detailed car information.
-
 **Endpoint:** `GET /admin/cars/:id`  
 **Auth Required:** Yes  
 **Role Required:** ADMIN
-
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | Car ID      |
-
-**Success Response (200):**
-```json
-{
-  "success": true,
-  "message": "Car fetched successfully",
-  "data": {
-    "id": "1",
-    "car_name": "Swift Dzire",
-    "category": "TAXI",
-    "transmission": "MANUAL",
-    "fuel_type": "PETROL",
-    "rate_type": "24HR",
-    "rate_amount": 1200.00,
-    "deposit_amount": 5000.00,
-    "purposes": ["SELF_DRIVE", "CORPORATE"],
-    "instructions": "Please return with full tank",
-    "rc_front_url": "https://s3.../cars/rc/front.jpg",
-    "rc_back_url": "https://s3.../cars/rc/back.jpg",
-    "is_active": true,
-    "images": [ ... ],
-    "operator": { ... },
-    "created_at": "2026-01-03T10:00:00.000Z",
-    "updated_at": "2026-01-03T10:00:00.000Z"
-  }
-}
-```
 
 ---
 
 ### 4.3 Delete Car
 
-Delete a car listing (removes from platform).
-
 **Endpoint:** `DELETE /admin/cars/:id`  
 **Auth Required:** Yes  
 **Role Required:** ADMIN
-
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | Car ID      |
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find car by ID with images
-3. Delete all car images from S3
-4. Delete RC documents from S3
-5. Delete car record (cascade deletes images)
-6. Return success
 
 **Success Response (200):**
 ```json
@@ -812,14 +537,6 @@ Delete a car listing (removes from platform).
   "message": "Car deleted successfully"
 }
 ```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 404 | Car not found | Invalid car ID |
 
 ---
 
@@ -858,25 +575,9 @@ List all booking requests with filters.
       "status": "PENDING",
       "reject_reason": null,
       "created_at": "2026-01-03T10:00:00.000Z",
-      "updated_at": "2026-01-03T10:00:00.000Z",
-      "car": {
-        "id": "1",
-        "car_name": "Swift Dzire",
-        "category": "TAXI"
-      },
-      "driver": {
-        "id": "3",
-        "full_name": "John Doe",
-        "phone_number": "+919876543210",
-        "profile_image_url": "https://s3.../profiles/john.jpg"
-      },
-      "operator": {
-        "id": "5",
-        "full_name": "Jane Smith",
-        "agency_name": "XYZ Rentals",
-        "phone_number": "+919876543211",
-        "profile_image_url": "https://s3.../profiles/jane.jpg"
-      }
+      "car": {...},
+      "driver": {...},
+      "operator": {...}
     }
   ],
   "meta": {
@@ -890,237 +591,90 @@ List all booking requests with filters.
 
 ---
 
-## 6. Location Management APIs
+## Static Location Data
 
-### 6.1 List Locations (Admin)
+> **Note:** Location data is now managed via static JSON files instead of database APIs. This approach is simpler, requires no database, and is easy to update.
 
-List all locations including inactive ones.
+### Overview
 
-**Endpoint:** `GET /admin/locations`  
-**Auth Required:** Yes  
-**Role Required:** ADMIN
+Location data is served as static JSON files that can be directly fetched by the frontend without authentication.
 
-**Query Parameters:**
+**Base URL for Static Files:** `http://localhost:3000/data`
 
-| Parameter   | Type    | Required | Default | Description                  |
-|-------------|---------|----------|---------|------------------------------|
-| `search`    | string  | No       | -       | Search by area or city name  |
-| `city_name` | string  | No       | -       | Filter by city               |
-| `is_active` | boolean | No       | -       | Filter by active status      |
-| `page`      | number  | No       | 1       | Page number                  |
-| `limit`     | number  | No       | 50      | Items per page (max: 100)    |
+### File Structure
 
-**Success Response (200):**
+```
+public/
+└── data/
+    └── locations/
+        ├── cities.json        # List of all available cities
+        └── ahmedabad.json     # Areas for Ahmedabad city
+```
+
+### Get All Cities
+
+**URL:** `GET /data/locations/cities.json`  
+**Auth Required:** No
+
+**Response:**
 ```json
 {
-  "success": true,
-  "message": "Locations fetched successfully",
-  "data": [
+  "cities": [
     {
-      "id": "1",
-      "area_name": "Andheri West",
-      "city_name": "Mumbai",
-      "is_active": true,
-      "created_at": "2026-01-03T10:00:00.000Z",
-      "updated_at": "2026-01-03T10:00:00.000Z"
-    },
-    {
-      "id": "2",
-      "area_name": "Bandra East",
-      "city_name": "Mumbai",
-      "is_active": true,
-      "created_at": "2026-01-03T10:05:00.000Z",
-      "updated_at": "2026-01-03T10:05:00.000Z"
-    },
-    {
-      "id": "3",
-      "area_name": "Koramangala",
-      "city_name": "Bangalore",
-      "is_active": false,
-      "created_at": "2026-01-03T10:10:00.000Z",
-      "updated_at": "2026-01-03T12:00:00.000Z"
+      "slug": "ahmedabad",
+      "name": "Ahmedabad",
+      "state": "Gujarat",
+      "country": "India"
     }
   ],
-  "meta": {
-    "page": 1,
-    "limit": 50,
-    "total": 100,
-    "total_pages": 2
-  }
+  "total": 1,
+  "last_updated": "2025-01-10"
 }
 ```
 
----
+### Get City Areas
 
-### 6.2 Create Location
+**URL:** `GET /data/locations/{city_slug}.json`  
+**Auth Required:** No
 
-Create a new service location.
+**Example:** `GET /data/locations/ahmedabad.json`
 
-**Endpoint:** `POST /admin/locations`  
-**Auth Required:** Yes  
-**Role Required:** ADMIN
-
-**Request Body:**
-
-| Field       | Type    | Required | Default | Description                    |
-|-------------|---------|----------|---------|--------------------------------|
-| `area_name` | string  | Yes      | -       | Area name (max 100 chars)      |
-| `city_name` | string  | Yes      | -       | City name (max 100 chars)      |
-| `is_active` | boolean | No       | true    | Active status                  |
-
-**Validations:**
-- `area_name`: Required, max 100 characters
-- `city_name`: Required, max 100 characters
-- Combination of area_name + city_name must be unique
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Check for duplicate location (case-insensitive)
-3. Create location record
-4. Return created location
-
-**Request Example:**
+**Response:**
 ```json
 {
-  "area_name": "Andheri West",
-  "city_name": "Mumbai",
-  "is_active": true
+  "slug": "ahmedabad",
+  "city": "Ahmedabad",
+  "state": "Gujarat",
+  "country": "India",
+  "areas": [
+    "Ambawadi",
+    "Amraiwadi",
+    "Bodakdev",
+    "...74 areas total..."
+  ],
+  "total_areas": 74
 }
 ```
 
-**Success Response (201):**
-```json
-{
-  "success": true,
-  "message": "Location created successfully",
-  "data": {
-    "id": "1",
-    "area_name": "Andheri West",
-    "city_name": "Mumbai",
-    "is_active": true,
-    "created_at": "2026-01-03T10:00:00.000Z",
-    "updated_at": "2026-01-03T10:00:00.000Z"
-  }
-}
-```
+### Managing Locations (Admin)
 
-**Error Responses:**
+Since locations are now static JSON files, management is done by editing the files directly:
 
-| Status | Message | When |
-|--------|---------|------|
-| 400 | Area name is required | Missing area_name |
-| 400 | City name is required | Missing city_name |
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 409 | Location already exists | Duplicate area+city |
+#### Adding a New City
 
----
+1. Add city entry to `public/data/locations/cities.json`
+2. Create `public/data/locations/{city_slug}.json` with areas
+3. Update `total` and `last_updated` in `cities.json`
 
-### 6.3 Update Location
+#### Adding Areas to Existing City
 
-Update an existing location.
+Edit the city's JSON file and add new areas to the `areas` array. Keep the array sorted alphabetically and update `total_areas`.
 
-**Endpoint:** `PUT /admin/locations/:id`  
-**Auth Required:** Yes  
-**Role Required:** ADMIN
+#### Removing a City
 
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | Location ID |
-
-**Request Body:**
-
-| Field       | Type    | Required | Description                    |
-|-------------|---------|----------|--------------------------------|
-| `area_name` | string  | No       | Area name (max 100 chars)      |
-| `city_name` | string  | No       | City name (max 100 chars)      |
-| `is_active` | boolean | No       | Active status                  |
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find location by ID
-3. Check for duplicate if changing names
-4. Update location fields
-5. Return updated location
-
-**Request Example (Update name):**
-```json
-{
-  "area_name": "Andheri East"
-}
-```
-
-**Request Example (Deactivate):**
-```json
-{
-  "is_active": false
-}
-```
-
-**Success Response (200):**
-```json
-{
-  "success": true,
-  "message": "Location updated successfully",
-  "data": {
-    "id": "1",
-    "area_name": "Andheri East",
-    "city_name": "Mumbai",
-    "is_active": true,
-    "created_at": "2026-01-03T10:00:00.000Z",
-    "updated_at": "2026-01-03T12:00:00.000Z"
-  }
-}
-```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 404 | Location not found | Invalid location ID |
-| 409 | Location already exists | Duplicate area+city |
-
----
-
-### 6.4 Delete Location
-
-Delete a location.
-
-**Endpoint:** `DELETE /admin/locations/:id`  
-**Auth Required:** Yes  
-**Role Required:** ADMIN
-
-**URL Parameters:**
-
-| Parameter | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | number | Location ID |
-
-**Logic:**
-1. Verify JWT token and admin role
-2. Find location by ID
-3. Delete location record
-4. Return success
-
-**Success Response (200):**
-```json
-{
-  "success": true,
-  "message": "Location deleted successfully"
-}
-```
-
-**Error Responses:**
-
-| Status | Message | When |
-|--------|---------|------|
-| 401 | Unauthorized | Missing/invalid token |
-| 403 | Access denied | Not an admin |
-| 404 | Location not found | Invalid location ID |
+1. Remove the city entry from `cities.json`
+2. Delete the city's JSON file
+3. Update `total` count and `last_updated` in `cities.json`
 
 ---
 
@@ -1134,19 +688,6 @@ Delete a location.
 | 2 | OPERATOR | Operator |
 | 3 | ADMIN | Administrator |
 
-### Locations Table
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | BIGINT | Primary key |
-| area_name | VARCHAR(100) | Area name (e.g., "Andheri West") |
-| city_name | VARCHAR(100) | City name (e.g., "Mumbai") |
-| is_active | BOOLEAN | Active status (default: true) |
-| created_at | TIMESTAMP | Creation time |
-| updated_at | TIMESTAMP | Last update time |
-
-**Unique Constraint:** `area_name` + `city_name`
-
 ---
 
 ## Admin Workflows
@@ -1156,7 +697,7 @@ Delete a location.
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    KYC VERIFICATION FLOW                      │
-├──────────────────────────��───────────────────────────────────┤
+├──────────────────────────────────────────────────────────────┤
 │                                                               │
 │  1. User submits KYC (POST /kyc/submit)                       │
 │     └── kyc_status = 'PENDING'                                │
@@ -1168,22 +709,11 @@ Delete a location.
 │     └── Shows documents with images                           │
 │                                                               │
 │  4. Admin approves/rejects:                                   │
-│                                                               │
-│     Option A: Approve entire KYC                              │
 │     └── PUT /admin/users/:id/kyc                              │
-│         {"status": "APPROVED"}                                │
-│         └── All pending documents also approved               │
-│                                                               │
-│     Option B: Reject entire KYC                               │
-│     └── PUT /admin/users/:id/kyc                              │
-│         {"status": "REJECTED", "reject_reason": "..."}        │
-│                                                               │
-│     Option C: Approve/Reject individual documents             │
-│     └── PUT /admin/documents/:id/status                       │
 │         {"status": "APPROVED"} or                             │
 │         {"status": "REJECTED", "reject_reason": "..."}        │
 │                                                               │
-│  5. User is notified (future: push notification)              │
+│  5. User is notified (push notification)                      │
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -1216,35 +746,6 @@ Delete a location.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Location Management Workflow
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                 LOCATION MANAGEMENT FLOW                      │
-├──────────────────────────────────────────────────────────────┤
-│                                                               │
-│  1. Admin adds new service area                               │
-│     └── POST /admin/locations                                 │
-│         {"area_name": "...", "city_name": "..."}              │
-│                                                               │
-│  2. Location appears in public list                           │
-│     └── GET /locations (for users)                            │
-│                                                               │
-│  3. To temporarily disable a location:                        │
-│     └── PUT /admin/locations/:id                              │
-│         {"is_active": false}                                  │
-│     └── Location hidden from public list                      │
-│                                                               │
-│  4. To re-enable:                                             │
-│     └── PUT /admin/locations/:id                              │
-│         {"is_active": true}                                   │
-│                                                               │
-│  5. To permanently remove:                                    │
-│     └── DELETE /admin/locations/:id                           │
-│                                                               │
-└──────────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ## Quick Reference
@@ -1269,13 +770,17 @@ Delete a location.
 | DELETE | `/admin/cars/:id` | Delete car |
 | **Booking Requests** |
 | GET | `/admin/booking-requests` | List all requests |
-| **Location Management** |
-| GET | `/admin/locations` | List all locations |
-| POST | `/admin/locations` | Create location |
-| PUT | `/admin/locations/:id` | Update location |
-| DELETE | `/admin/locations/:id` | Delete location |
 
-**Total: 15 Admin Endpoints**
+**Total: 11 Admin Endpoints**
+
+### Static Location Files
+
+| URL | Description |
+|-----|-------------|
+| `GET /data/locations/cities.json` | List all cities |
+| `GET /data/locations/{slug}.json` | Get city areas (e.g., `ahmedabad.json`) |
+
+> **Note:** Location management is done by editing JSON files in `public/data/locations/`
 
 ---
 
@@ -1289,13 +794,7 @@ curl -X GET http://localhost:3000/api/v1/admin/dashboard/stats \
 
 ### List Users
 ```bash
-curl -X GET "http://localhost:3000/api/v1/admin/users?role=DRIVER&kyc_status=PENDING&page=1&limit=10" \
-  -H "Authorization: Bearer ADMIN_TOKEN"
-```
-
-### Get User Details
-```bash
-curl -X GET http://localhost:3000/api/v1/admin/users/1 \
+curl -X GET "http://localhost:3000/api/v1/admin/users?role=DRIVER&kyc_status=PENDING" \
   -H "Authorization: Bearer ADMIN_TOKEN"
 ```
 
@@ -1307,12 +806,6 @@ curl -X PUT http://localhost:3000/api/v1/admin/users/1/status \
   -d '{"is_active": false, "reason": "Violation of terms"}'
 ```
 
-### List Pending KYC
-```bash
-curl -X GET "http://localhost:3000/api/v1/admin/kyc/pending?role=DRIVER" \
-  -H "Authorization: Bearer ADMIN_TOKEN"
-```
-
 ### Approve KYC
 ```bash
 curl -X PUT http://localhost:3000/api/v1/admin/users/1/kyc \
@@ -1321,25 +814,9 @@ curl -X PUT http://localhost:3000/api/v1/admin/users/1/kyc \
   -d '{"status": "APPROVED"}'
 ```
 
-### Reject KYC
-```bash
-curl -X PUT http://localhost:3000/api/v1/admin/users/1/kyc \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"status": "REJECTED", "reject_reason": "Documents not clear"}'
-```
-
-### Approve Document
-```bash
-curl -X PUT http://localhost:3000/api/v1/admin/documents/1/status \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"status": "APPROVED"}'
-```
-
 ### List Cars
 ```bash
-curl -X GET "http://localhost:3000/api/v1/admin/cars?category=TAXI&is_active=true" \
+curl -X GET "http://localhost:3000/api/v1/admin/cars?category=TAXI" \
   -H "Authorization: Bearer ADMIN_TOKEN"
 ```
 
@@ -1351,30 +828,17 @@ curl -X DELETE http://localhost:3000/api/v1/admin/cars/1 \
 
 ### List Booking Requests
 ```bash
-curl -X GET "http://localhost:3000/api/v1/admin/booking-requests?status=PENDING&initiated_by=DRIVER" \
+curl -X GET "http://localhost:3000/api/v1/admin/booking-requests?status=PENDING" \
   -H "Authorization: Bearer ADMIN_TOKEN"
 ```
 
-### Create Location
+### Fetch Static Location Data
 ```bash
-curl -X POST http://localhost:3000/api/v1/admin/locations \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"area_name": "Andheri West", "city_name": "Mumbai", "is_active": true}'
-```
+# Get all cities
+curl -X GET http://localhost:3000/data/locations/cities.json
 
-### Update Location
-```bash
-curl -X PUT http://localhost:3000/api/v1/admin/locations/1 \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"is_active": false}'
-```
-
-### Delete Location
-```bash
-curl -X DELETE http://localhost:3000/api/v1/admin/locations/1 \
-  -H "Authorization: Bearer ADMIN_TOKEN"
+# Get areas for Ahmedabad
+curl -X GET http://localhost:3000/data/locations/ahmedabad.json
 ```
 
 ---

@@ -12,14 +12,16 @@
 2. [Authentication](#authentication)
 3. [Response Format](#response-format)
 4. [Error Codes](#error-codes)
-5. [API Endpoints](#api-endpoints)
+5. [Static Data Files](#static-data-files)
+   - [Location Data](#location-data)
+6. [API Endpoints](#api-endpoints)
    - [Auth APIs](#1-auth-apis)
    - [User APIs](#2-user-apis)
    - [KYC APIs](#3-kyc-apis)
    - [Car APIs](#4-car-apis)
    - [Booking Request APIs](#5-booking-request-apis)
-6. [Database Schema](#database-schema)
-7. [Flow Diagrams](#flow-diagrams)
+7. [Database Schema](#database-schema)
+8. [Flow Diagrams](#flow-diagrams)
 
 ---
 
@@ -134,6 +136,156 @@ Authorization: Bearer <jwt_token>
 | `NOT_FOUND` | 404 | Resource not found |
 | `DUPLICATE_ERROR` | 409 | Duplicate entry |
 | `INTERNAL_ERROR` | 500 | Server error |
+
+---
+
+## Static Data Files
+
+Location data is served as static JSON files. The frontend can directly fetch these files without authentication.
+
+**Base URL for Static Files:** `http://localhost:3000/data`
+
+### Location Data
+
+#### File Structure
+
+```
+public/
+└── data/
+    └── locations/
+        ├── cities.json        # List of all available cities
+        └── ahmedabad.json     # Areas for Ahmedabad city
+```
+
+---
+
+### Get All Cities
+
+Fetch the list of all available cities.
+
+**URL:** `GET /data/locations/cities.json`  
+**Auth Required:** No
+
+**Response:**
+```json
+{
+  "cities": [
+    {
+      "slug": "ahmedabad",
+      "name": "Ahmedabad",
+      "state": "Gujarat",
+      "country": "India"
+    }
+  ],
+  "total": 1,
+  "last_updated": "2025-01-10"
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cities` | array | List of city objects |
+| `cities[].slug` | string | URL-friendly city identifier (use to fetch areas) |
+| `cities[].name` | string | Display name of the city |
+| `cities[].state` | string | State name |
+| `cities[].country` | string | Country name |
+| `total` | number | Total number of cities |
+| `last_updated` | string | Date when data was last updated (YYYY-MM-DD) |
+
+---
+
+### Get City Areas
+
+Fetch all areas for a specific city using the city slug.
+
+**URL:** `GET /data/locations/{city_slug}.json`  
+**Auth Required:** No
+
+**Example:** `GET /data/locations/ahmedabad.json`
+
+**Response:**
+```json
+{
+  "slug": "ahmedabad",
+  "city": "Ahmedabad",
+  "state": "Gujarat",
+  "country": "India",
+  "areas": [
+    "Ambawadi",
+    "Amraiwadi",
+    "Asarwa",
+    "Ashram Road",
+    "Bodakdev",
+    "Bopal",
+    "...more areas..."
+  ],
+  "total_areas": 74
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `slug` | string | URL-friendly city identifier |
+| `city` | string | Display name of the city |
+| `state` | string | State name |
+| `country` | string | Country name |
+| `areas` | array | List of area names (sorted alphabetically) |
+| `total_areas` | number | Total number of areas |
+
+---
+
+### Adding New Cities
+
+To add a new city:
+
+1. Add city entry to `public/data/locations/cities.json`
+2. Create a new file `public/data/locations/{city_slug}.json` with areas
+
+**Example: Adding Mumbai**
+
+1. Update `cities.json`:
+```json
+{
+  "cities": [
+    {
+      "slug": "ahmedabad",
+      "name": "Ahmedabad",
+      "state": "Gujarat",
+      "country": "India"
+    },
+    {
+      "slug": "mumbai",
+      "name": "Mumbai",
+      "state": "Maharashtra",
+      "country": "India"
+    }
+  ],
+  "total": 2,
+  "last_updated": "2025-01-15"
+}
+```
+
+2. Create `mumbai.json`:
+```json
+{
+  "slug": "mumbai",
+  "city": "Mumbai",
+  "state": "Maharashtra",
+  "country": "India",
+  "areas": [
+    "Andheri East",
+    "Andheri West",
+    "Bandra East",
+    "Bandra West",
+    "...more areas..."
+  ],
+  "total_areas": 50
+}
+```
 
 ---
 

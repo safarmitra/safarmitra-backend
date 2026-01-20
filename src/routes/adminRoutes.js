@@ -11,9 +11,6 @@ const {
   validateUpdateDocumentStatus,
   validateListCars,
   validateListBookingRequests,
-  validateCreateLocation,
-  validateUpdateLocation,
-  validateListLocations,
   validateListPendingKyc,
 } = require('../validators/adminValidator');
 
@@ -109,35 +106,5 @@ router.delete('/cars/:id', adminController.deleteCar);
  * @access  Admin only
  */
 router.get('/booking-requests', validateListBookingRequests, adminController.listBookingRequests);
-
-// ==================== Location Management ====================
-
-/**
- * @route   GET /admin/locations
- * @desc    List all locations
- * @access  Admin only
- */
-router.get('/locations', validateListLocations, adminController.listLocationsAdmin);
-
-/**
- * @route   POST /admin/locations
- * @desc    Create new location
- * @access  Admin only
- */
-router.post('/locations', validateCreateLocation, adminController.createLocation);
-
-/**
- * @route   PUT /admin/locations/:id
- * @desc    Update location
- * @access  Admin only
- */
-router.put('/locations/:id', validateUpdateLocation, adminController.updateLocation);
-
-/**
- * @route   DELETE /admin/locations/:id
- * @desc    Delete location
- * @access  Admin only
- */
-router.delete('/locations/:id', adminController.deleteLocation);
 
 module.exports = router;

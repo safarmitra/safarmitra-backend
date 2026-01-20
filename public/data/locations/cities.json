@@ -1,0 +1,12 @@
+{
+  "cities": [
+    {
+      "slug": "ahmedabad",
+      "name": "Ahmedabad",
+      "state": "Gujarat",
+      "country": "India"
+    }
+  ],
+  "total": 1,
+  "last_updated": "2025-01-10"
+}

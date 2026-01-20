@@ -27,6 +27,12 @@ app.use(express.urlencoded({ extended: true }));
 // Files will be accessible at: http://localhost:3000/uploads/folder/filename.ext
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+// Serve static data files (locations, etc.)
+// Files will be accessible at: http://localhost:3000/data/locations/cities.json
+// Also available at: http://localhost:3000/api/v1/data/locations/cities.json
+app.use('/data', express.static(path.join(__dirname, '../public/data')));
+app.use('/api/v1/data', express.static(path.join(__dirname, '../public/data')));
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({

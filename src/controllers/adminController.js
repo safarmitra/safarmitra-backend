@@ -182,86 +182,6 @@ const listBookingRequests = async (req, res) => {
   }
 };
 
-/**
- * Create location
- * POST /admin/locations
- */
-const createLocation = async (req, res) => {
-  try {
-    const location = await adminService.createLocation(req.body);
-    return success(res, 'Location created successfully', location, 201);
-  } catch (err) {
-    console.error('Create location error:', err);
-    return error(res, err.message, err.statusCode || 500);
-  }
-};
-
-/**
- * Update location
- * PUT /admin/locations/:id
- */
-const updateLocation = async (req, res) => {
-  try {
-    const location = await adminService.updateLocation(req.params.id, req.body);
-    return success(res, 'Location updated successfully', location);
-  } catch (err) {
-    console.error('Update location error:', err);
-    return error(res, err.message, err.statusCode || 500);
-  }
-};
-
-/**
- * Delete location
- * DELETE /admin/locations/:id
- */
-const deleteLocation = async (req, res) => {
-  try {
-    await adminService.deleteLocation(req.params.id);
-    return success(res, 'Location deleted successfully');
-  } catch (err) {
-    console.error('Delete location error:', err);
-    return error(res, err.message, err.statusCode || 500);
-  }
-};
-
-/**
- * List locations (admin)
- * GET /admin/locations
- */
-const listLocationsAdmin = async (req, res) => {
-  try {
-    const result = await adminService.listLocationsAdmin(req.query);
-    return res.status(200).json({
-      success: true,
-      message: 'Locations fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
-  } catch (err) {
-    console.error('List locations error:', err);
-    return error(res, err.message, err.statusCode || 500);
-  }
-};
-
-/**
- * List active locations (public)
- * GET /locations
- */
-const listLocationsPublic = async (req, res) => {
-  try {
-    const result = await adminService.listLocationsPublic(req.query);
-    return res.status(200).json({
-      success: true,
-      message: 'Locations fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
-  } catch (err) {
-    console.error('List locations error:', err);
-    return error(res, err.message, err.statusCode || 500);
-  }
-};
-
 module.exports = {
   getDashboardStats,
   listUsers,
@@ -274,9 +194,4 @@ module.exports = {
   getCarById,
   deleteCar,
   listBookingRequests,
-  createLocation,
-  updateLocation,
-  deleteLocation,
-  listLocationsAdmin,
-  listLocationsPublic,
 };

@@ -1,6 +1,6 @@
 'use strict';
 
-const { User, Role, UserIdentity, Car, CarImage, BookingRequest, Location } = require('../models');
+const { User, Role, UserIdentity, Car, CarImage, BookingRequest } = require('../models');
 const { Op } = require('sequelize');
 const uploadService = require('./uploadService');
 const notificationService = require('./notificationService');
@@ -78,12 +78,6 @@ const getDashboardStats = async () => {
       BookingRequest.count({ where: { created_at: { [Op.gte]: today } } }),
     ]);
 
-  // Location stats
-  const [totalLocations, activeLocations] = await Promise.all([
-    Location.count(),
-    Location.count({ where: { is_active: true } }),
-  ]);
-
   return {
     users: {
       total: totalUsers,
@@ -108,10 +102,6 @@ const getDashboardStats = async () => {
       accepted: acceptedRequests,
       rejected: rejectedRequests,
       today: requestsToday,
-    },
-    locations: {
-      total: totalLocations,
-      active: activeLocations,
     },
   };
 };
@@ -692,184 +682,6 @@ const listBookingRequests = async (filters) => {
   };
 };
 
-/**
- * Create location
- */
-const createLocation = async (data) => {
-  const { area_name, city_name, is_active } = data;
-
-  // Check for duplicate
-  const existing = await Location.findOne({
-    where: {
-      area_name: { [Op.iLike]: area_name },
-      city_name: { [Op.iLike]: city_name },
-    },
-  });
-
-  if (existing) {
-    const error = new Error('Location already exists');
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const location = await Location.create({
-    area_name,
-    city_name,
-    is_active: is_active !== undefined ? is_active : true,
-  });
-
-  return formatLocation(location);
-};
-
-/**
- * Update location
- */
-const updateLocation = async (locationId, data) => {
-  const location = await Location.findByPk(locationId);
-
-  if (!location) {
-    const error = new Error('Location not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const { area_name, city_name, is_active } = data;
-
-  // Check for duplicate if changing name
-  if (area_name || city_name) {
-    const checkAreaName = area_name || location.area_name;
-    const checkCityName = city_name || location.city_name;
-
-    const existing = await Location.findOne({
-      where: {
-        id: { [Op.ne]: locationId },
-        area_name: { [Op.iLike]: checkAreaName },
-        city_name: { [Op.iLike]: checkCityName },
-      },
-    });
-
-    if (existing) {
-      const error = new Error('Location already exists');
-      error.statusCode = 409;
-      throw error;
-    }
-  }
-
-  if (area_name !== undefined) location.area_name = area_name;
-  if (city_name !== undefined) location.city_name = city_name;
-  if (is_active !== undefined) location.is_active = is_active;
-
-  await location.save();
-
-  return formatLocation(location);
-};
-
-/**
- * Delete location
- */
-const deleteLocation = async (locationId) => {
-  const location = await Location.findByPk(locationId);
-
-  if (!location) {
-    const error = new Error('Location not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  await location.destroy();
-};
-
-/**
- * List locations (admin - all locations)
- */
-const listLocationsAdmin = async (filters) => {
-  const { search, city_name, is_active, page, limit } = filters;
-  const offset = (page - 1) * limit;
-
-  const where = {};
-
-  if (search) {
-    where[Op.or] = [
-      { area_name: { [Op.iLike]: `%${search}%` } },
-      { city_name: { [Op.iLike]: `%${search}%` } },
-    ];
-  }
-
-  if (city_name) {
-    where.city_name = { [Op.iLike]: `%${city_name}%` };
-  }
-
-  if (is_active !== undefined) {
-    where.is_active = is_active;
-  }
-
-  const { count, rows } = await Location.findAndCountAll({
-    where,
-    order: [
-      ['city_name', 'ASC'],
-      ['area_name', 'ASC'],
-    ],
-    limit,
-    offset,
-  });
-
-  return {
-    data: rows.map(formatLocation),
-    meta: {
-      page,
-      limit,
-      total: count,
-      total_pages: Math.ceil(count / limit),
-    },
-  };
-};
-
-/**
- * List active locations (public)
- */
-const listLocationsPublic = async (filters) => {
-  const { search, city_name, page, limit } = filters;
-  const offset = (page - 1) * limit;
-
-  const where = { is_active: true };
-
-  if (search) {
-    where[Op.or] = [
-      { area_name: { [Op.iLike]: `%${search}%` } },
-      { city_name: { [Op.iLike]: `%${search}%` } },
-    ];
-  }
-
-  if (city_name) {
-    where.city_name = { [Op.iLike]: `%${city_name}%` };
-  }
-
-  const { count, rows } = await Location.findAndCountAll({
-    where,
-    attributes: ['id', 'area_name', 'city_name'],
-    order: [
-      ['city_name', 'ASC'],
-      ['area_name', 'ASC'],
-    ],
-    limit,
-    offset,
-  });
-
-  return {
-    data: rows.map((loc) => ({
-      id: loc.id.toString(),
-      area_name: loc.area_name,
-      city_name: loc.city_name,
-    })),
-    meta: {
-      page,
-      limit,
-      total: count,
-      total_pages: Math.ceil(count / limit),
-    },
-  };
-};
-
 // Helper functions
 const formatCar = (car) => {
   const sortedImages = car.images
@@ -910,15 +722,6 @@ const formatCar = (car) => {
   };
 };
 
-const formatLocation = (location) => ({
-  id: location.id.toString(),
-  area_name: location.area_name,
-  city_name: location.city_name,
-  is_active: location.is_active,
-  created_at: location.created_at,
-  updated_at: location.updated_at,
-});
-
 module.exports = {
   getDashboardStats,
   listUsers,
@@ -931,9 +734,4 @@ module.exports = {
   getCarById,
   deleteCar,
   listBookingRequests,
-  createLocation,
-  updateLocation,
-  deleteLocation,
-  listLocationsAdmin,
-  listLocationsPublic,
 };
