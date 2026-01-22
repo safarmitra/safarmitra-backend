@@ -47,10 +47,18 @@ module.exports = (sequelize) => {
       },
       kyc_status: {
         type: DataTypes.STRING(20),
-        defaultValue: 'PENDING',
+        defaultValue: 'NOT_SUBMITTED',
       },
       kyc_reject_reason: {
         type: DataTypes.TEXT,
+      },
+      onboarding_token: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      onboarding_token_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
       },
       deleted_at: {
         type: DataTypes.DATE,

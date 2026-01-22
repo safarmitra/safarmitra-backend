@@ -1,4 +1,4 @@
-const { User, Role } = require('../models');
+const { User, Role, UserIdentity } = require('../models');
 const { Op } = require('sequelize');
 const uploadService = require('./uploadService');
 
@@ -8,7 +8,8 @@ const uploadService = require('./uploadService');
  * Logic:
  * 1. Find user by ID with role association
  * 2. Throw error if user not found
- * 3. Format and return user profile
+ * 3. Build onboarding status for Flutter navigation
+ * 4. Format and return user profile with onboarding
  */
 const getProfile = async (userId) => {
   const user = await User.findByPk(userId, {
@@ -19,7 +20,24 @@ const getProfile = async (userId) => {
     throw new Error('User not found');
   }
 
-  return formatUserProfile(user);
+  // Build onboarding status
+  // KYC status values:
+  // - NOT_SUBMITTED: User hasn't submitted KYC documents yet
+  // - PENDING: User submitted KYC, waiting for admin review
+  // - APPROVED: Admin approved KYC
+  // - REJECTED: Admin rejected KYC
+  const kycSubmitted = user.kyc_status !== 'NOT_SUBMITTED';
+
+  const onboarding = {
+    role_selected: !!user.role_id,
+    kyc_submitted: kycSubmitted,
+    kyc_status: user.kyc_status,
+  };
+
+  return {
+    ...formatUserProfile(user),
+    onboarding,
+  };
 };
 
 /**

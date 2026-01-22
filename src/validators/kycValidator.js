@@ -1,6 +1,10 @@
 const Joi = require('joi');
 
 const kycSubmitSchema = Joi.object({
+  onboarding_token: Joi.string().required().messages({
+    'string.empty': 'Onboarding token is required',
+    'any.required': 'Onboarding token is required',
+  }),
   full_name: Joi.string().max(100).messages({
     'string.max': 'Full name must be less than 100 characters',
   }),

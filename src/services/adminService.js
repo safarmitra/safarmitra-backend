@@ -40,7 +40,13 @@ const getDashboardStats = async () => {
   ]);
 
   // KYC stats
-  const [kycPending, kycApproved, kycRejected] = await Promise.all([
+  const [kycNotSubmitted, kycPending, kycApproved, kycRejected] = await Promise.all([
+    User.count({
+      where: {
+        role_id: { [Op.in]: [driverRole?.id, operatorRole?.id].filter(Boolean) },
+        kyc_status: 'NOT_SUBMITTED',
+      },
+    }),
     User.count({
       where: {
         role_id: { [Op.in]: [driverRole?.id, operatorRole?.id].filter(Boolean) },
@@ -87,6 +93,7 @@ const getDashboardStats = async () => {
       new_this_week: newThisWeek,
     },
     kyc: {
+      not_submitted: kycNotSubmitted,
       pending: kycPending,
       approved: kycApproved,
       rejected: kycRejected,

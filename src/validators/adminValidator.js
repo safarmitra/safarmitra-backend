@@ -8,7 +8,7 @@ const Joi = require('joi');
 const listUsersSchema = Joi.object({
   search: Joi.string().max(100).allow('', null),
   role: Joi.string().valid('DRIVER', 'OPERATOR', 'ALL').default('ALL'),
-  kyc_status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'ALL').default('ALL'),
+  kyc_status: Joi.string().valid('NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED', 'ALL').default('ALL'),
   is_active: Joi.boolean(),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(50).default(10),

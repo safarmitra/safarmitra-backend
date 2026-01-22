@@ -19,6 +19,11 @@ module.exports = (sequelize) => {
           key: 'id',
         },
       },
+      car_number: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        unique: true,
+      },
       car_name: {
         type: DataTypes.STRING(100),
         allowNull: false,

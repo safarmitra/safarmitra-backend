@@ -1,6 +1,11 @@
 const Joi = require('joi');
 
 const createCarSchema = Joi.object({
+  car_number: Joi.string().max(20).required().messages({
+    'string.empty': 'Car registration number is required',
+    'string.max': 'Car registration number must be less than 20 characters',
+    'any.required': 'Car registration number is required',
+  }),
   car_name: Joi.string().max(100).required().messages({
     'string.empty': 'Car name is required',
     'string.max': 'Car name must be less than 100 characters',

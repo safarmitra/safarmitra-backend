@@ -168,15 +168,30 @@ const getCarById = async (carId, userId, roleCode) => {
  * Create new car
  * 
  * Logic:
- * 1. Upload RC front and back images to S3
- * 2. Upload car images to S3 (if provided)
- * 3. Parse purposes from comma-separated string to array
- * 4. Create car record
- * 5. Create car image records
- * 6. Set primary image
- * 7. Return created car
+ * 1. Check if car_number already exists (must be unique)
+ * 2. Upload RC front and back images to S3
+ * 3. Upload car images to S3 (if provided)
+ * 4. Parse purposes from comma-separated string to array
+ * 5. Create car record
+ * 6. Create car image records
+ * 7. Set primary image
+ * 8. Return created car
  */
 const createCar = async (operatorId, data, files) => {
+  // Normalize car number (uppercase, remove spaces)
+  const carNumber = data.car_number.toUpperCase().replace(/\s/g, '');
+
+  // Check if car_number already exists
+  const existingCar = await Car.findOne({
+    where: { car_number: carNumber },
+  });
+
+  if (existingCar) {
+    const error = new Error('A car with this registration number already exists');
+    error.statusCode = 409;
+    throw error;
+  }
+
   // Upload RC documents
   const rcFrontFile = files['rc_front'][0];
   const rcBackFile = files['rc_back'][0];
@@ -193,6 +208,7 @@ const createCar = async (operatorId, data, files) => {
   // Create car
   const car = await Car.create({
     operator_id: operatorId,
+    car_number: carNumber,
     car_name: data.car_name,
     category: data.category,
     transmission: data.transmission,
@@ -443,6 +459,7 @@ const formatCarDetail = (car) => {
 
   return {
     id: car.id,
+    car_number: car.car_number,
     car_name: car.car_name,
     category: car.category,
     transmission: car.transmission,

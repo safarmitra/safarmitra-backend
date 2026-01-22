@@ -3,6 +3,9 @@ const { sendError } = require('../utils/responseHelper');
 
 /**
  * Verify JWT token middleware
+ * 
+ * JWT is only issued when KYC is APPROVED, so we can trust the token data
+ * No need to check database for role/KYC status on every request
  */
 const authMiddleware = (req, res, next) => {
   try {
@@ -25,6 +28,9 @@ const authMiddleware = (req, res, next) => {
 
 /**
  * Role-based access control middleware (array of roles)
+ * 
+ * Since JWT is only issued after KYC approval, we can trust the roleCode in token
+ * No database lookup needed
  */
 const roleMiddleware = (allowedRoles) => {
   return (req, res, next) => {
@@ -46,6 +52,9 @@ const roleMiddleware = (allowedRoles) => {
 
 /**
  * Require specific role middleware (single role)
+ * 
+ * Since JWT is only issued after KYC approval, we can trust the roleCode in token
+ * No database lookup needed
  */
 const requireRole = (role) => {
   return (req, res, next) => {
@@ -67,12 +76,20 @@ const requireRole = (role) => {
 
 /**
  * KYC verification middleware
+ * 
+ * Since JWT is only issued after KYC approval, we can trust the kycStatus in token
+ * No database lookup needed
+ * 
+ * This middleware is kept for backward compatibility but should always pass
+ * for valid JWT tokens (since JWT is only issued when KYC is APPROVED)
  */
 const kycMiddleware = (req, res, next) => {
   if (!req.user) {
     return sendError(res, 'Unauthorized', 401, 'UNAUTHORIZED');
   }
 
+  // JWT is only issued when KYC is APPROVED, so this should always pass
+  // But we keep the check for safety
   if (req.user.kycStatus !== 'APPROVED') {
     return sendError(
       res,
@@ -92,6 +109,9 @@ const requireKyc = kycMiddleware;
 
 /**
  * Require Admin role middleware
+ * 
+ * Since JWT is only issued after KYC approval, we can trust the roleCode in token
+ * No database lookup needed
  */
 const requireAdmin = (req, res, next) => {
   if (!req.user) {

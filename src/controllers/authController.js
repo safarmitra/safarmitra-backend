@@ -4,6 +4,10 @@ const { sendSuccess, sendError } = require('../utils/responseHelper');
 /**
  * POST /auth/login
  * Login or register user with Firebase token
+ * 
+ * Returns:
+ * - token (JWT) if KYC is APPROVED
+ * - onboarding_token if KYC is NOT APPROVED
  */
 const login = async (req, res, next) => {
   try {
@@ -17,6 +21,7 @@ const login = async (req, res, next) => {
       res,
       {
         token: result.token,
+        onboarding_token: result.onboarding_token,
         user: result.user,
         onboarding: result.onboarding,
       },
@@ -30,15 +35,17 @@ const login = async (req, res, next) => {
 /**
  * POST /auth/select-role
  * Select user role (DRIVER or OPERATOR)
+ * 
+ * Uses onboarding_token for authentication
+ * Because user doesn't have JWT until KYC is approved
  */
 const selectRole = async (req, res, next) => {
   try {
-    const { role } = req.body;
-    const userId = req.user.userId;
+    const { onboarding_token, role } = req.body;
 
-    const user = await authService.selectRole(userId, role);
+    const result = await authService.selectRole(onboarding_token, role);
 
-    return sendSuccess(res, { user }, 'Role selected successfully');
+    return sendSuccess(res, result, 'Role selected successfully');
   } catch (error) {
     next(error);
   }
@@ -47,6 +54,8 @@ const selectRole = async (req, res, next) => {
 /**
  * POST /auth/logout
  * Logout user and clear FCM token
+ * 
+ * Requires JWT (only for verified users)
  */
 const logout = async (req, res, next) => {
   try {

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
-const { User, UserIdentity } = require('../models');
+const { User, UserIdentity, Role } = require('../models');
 const uploadService = require('./uploadService');
+const authService = require('./authService');
 
 /**
  * Hash document number for security
@@ -10,27 +11,25 @@ const hashDocumentNumber = (documentNumber) => {
 };
 
 /**
- * Get KYC status and documents
+ * Get KYC status and documents (using onboarding token)
  * 
  * Logic:
- * 1. Find user by ID with KYC fields
+ * 1. Find user by onboarding token
  * 2. Find all documents for user from user_identity table
  * 3. Return KYC status, personal info, and documents list
  */
-const getKycStatus = async (userId) => {
-  const user = await User.findByPk(userId, {
-    attributes: ['id', 'kyc_status', 'kyc_reject_reason', 'full_name', 'address', 'agency_name', 'profile_image_url'],
-  });
-
-  if (!user) {
-    throw new Error('User not found');
-  }
+const getKycStatus = async (onboardingToken) => {
+  // Find user by onboarding token
+  const user = await authService.findUserByOnboardingToken(onboardingToken);
 
   const documents = await UserIdentity.findAll({
-    where: { user_id: userId },
+    where: { user_id: user.id },
     attributes: ['id', 'document_type', 'front_doc_url', 'back_doc_url', 'status', 'reject_reason', 'created_at'],
     order: [['created_at', 'DESC']],
   });
+
+  // Build onboarding status
+  const kycSubmitted = user.kyc_status !== 'NOT_SUBMITTED';
 
   return {
     kyc_status: user.kyc_status,
@@ -49,44 +48,53 @@ const getKycStatus = async (userId) => {
       status: doc.status,
       reject_reason: doc.reject_reason,
     })),
+    onboarding: {
+      role_selected: !!user.role_id,
+      kyc_submitted: kycSubmitted,
+      kyc_status: user.kyc_status,
+    },
   };
 };
 
 /**
  * Submit or Update KYC (Combined personal info + documents)
+ * Uses onboarding token for authentication
  * 
  * Logic:
- * 1. Find user by ID
- * 2. Update personal info if provided (full_name, address, agency_name)
- * 3. Upload profile image if provided
- * 4. Process each document:
+ * 1. Find user by onboarding token
+ * 2. Check user has selected a role
+ * 3. Update personal info if provided (full_name, address, agency_name)
+ * 4. Upload profile image if provided
+ * 5. Process each document:
  *    a. Hash document number
  *    b. Check for duplicates (same hash, different user)
  *    c. Upload front/back images to S3
  *    d. Create new or update existing document record
- * 5. Update user's kyc_status to 'PENDING'
- * 6. Return success with summary
+ * 6. Update user's kyc_status to 'PENDING'
+ * 7. Return success with summary and onboarding status
  * 
  * Note: This handles both initial submission and resubmission
  * - For initial: Send all data
  * - For resubmission: Send only the fields/documents to update
  */
-const submitKyc = async (userId, data, files) => {
-  const user = await User.findByPk(userId);
+const submitKyc = async (onboardingToken, data, files) => {
+  // Step 1: Find user by onboarding token
+  const user = await authService.findUserByOnboardingToken(onboardingToken);
 
-  if (!user) {
-    throw new Error('User not found');
+  // Step 2: Check user has selected a role
+  if (!user.role_id) {
+    throw new Error('Please select a role before submitting KYC');
   }
 
   const updateData = {};
   let documentsProcessed = 0;
 
-  // Step 2: Update personal info if provided
+  // Step 3: Update personal info if provided
   if (data.full_name) updateData.full_name = data.full_name;
   if (data.address) updateData.address = data.address;
   if (data.agency_name !== undefined) updateData.agency_name = data.agency_name;
 
-  // Step 3: Upload profile image if provided
+  // Step 4: Upload profile image if provided
   const profileImage = files['profile_image']?.[0];
   if (profileImage) {
     // Delete old image if exists
@@ -110,7 +118,7 @@ const submitKyc = async (userId, data, files) => {
     await user.update(updateData);
   }
 
-  // Step 4: Process documents if provided
+  // Step 5: Process documents if provided
   const documents = data.documents || [];
 
   for (let i = 0; i < documents.length; i++) {
@@ -132,7 +140,7 @@ const submitKyc = async (userId, data, files) => {
       where: { document_number_hash: documentHash },
     });
 
-    if (existingDoc && existingDoc.user_id !== parseInt(userId)) {
+    if (existingDoc && existingDoc.user_id !== user.id) {
       throw new Error(`${doc.document_type} is already registered with another account`);
     }
 
@@ -148,7 +156,7 @@ const submitKyc = async (userId, data, files) => {
 
     // Check if user already has this document type
     const userExistingDoc = await UserIdentity.findOne({
-      where: { user_id: userId, document_type: doc.document_type },
+      where: { user_id: user.id, document_type: doc.document_type },
     });
 
     if (userExistingDoc) {
@@ -163,7 +171,7 @@ const submitKyc = async (userId, data, files) => {
     } else {
       // Create new document
       await UserIdentity.create({
-        user_id: userId,
+        user_id: user.id,
         document_type: doc.document_type,
         document_number_hash: documentHash,
         front_doc_url: frontUpload.url,
@@ -175,18 +183,23 @@ const submitKyc = async (userId, data, files) => {
     documentsProcessed++;
   }
 
-  // Step 5: Update user KYC status to PENDING
+  // Step 6: Update user KYC status to PENDING
   await user.update({
     kyc_status: 'PENDING',
     kyc_reject_reason: null,
   });
 
-  // Step 6: Return success
+  // Step 7: Return success with onboarding status
   return {
     kyc_status: 'PENDING',
     personal_info_updated: Object.keys(updateData).length > 0,
     documents_processed: documentsProcessed,
     message: 'KYC submitted for verification',
+    onboarding: {
+      role_selected: true,
+      kyc_submitted: true,
+      kyc_status: 'PENDING',
+    },
   };
 };
 

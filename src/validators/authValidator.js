@@ -10,7 +10,15 @@ const loginSchema = Joi.object({
   }),
 });
 
+/**
+ * Select role schema
+ * Uses onboarding_token since user doesn't have JWT yet
+ */
 const selectRoleSchema = Joi.object({
+  onboarding_token: Joi.string().required().messages({
+    'string.empty': 'Onboarding token is required',
+    'any.required': 'Onboarding token is required',
+  }),
   role: Joi.string().valid('DRIVER', 'OPERATOR').required().messages({
     'string.empty': 'Role is required',
     'any.only': 'Role must be either DRIVER or OPERATOR',
