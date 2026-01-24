@@ -17,7 +17,8 @@ const hashDocumentNumber = (documentNumber) => {
  * Logic:
  * 1. Find user by onboarding token
  * 2. Find all documents for user from user_identity table
- * 3. Return KYC status, personal info, and documents list
+ * 3. If KYC is APPROVED, generate JWT token and clear onboarding token
+ * 4. Return KYC status, personal info, documents list, and token (if approved)
  */
 const getKycStatus = async (onboardingToken) => {
   // Find user by onboarding token
@@ -31,8 +32,22 @@ const getKycStatus = async (onboardingToken) => {
 
   // Build onboarding status
   const kycSubmitted = user.kyc_status !== 'NOT_SUBMITTED';
+  const isApproved = user.kyc_status === 'APPROVED';
+
+  // If KYC is approved, generate JWT token and clear onboarding token
+  let token = null;
+  if (isApproved) {
+    token = authService.generateToken(user);
+    
+    // Clear onboarding token since user is now verified
+    await user.update({
+      onboarding_token: null,
+      onboarding_token_expires_at: null,
+    });
+  }
 
   return {
+    token, // JWT token (only when APPROVED, null otherwise)
     kyc_status: user.kyc_status,
     kyc_reject_reason: user.kyc_reject_reason,
     personal_info: {
@@ -49,6 +64,7 @@ const getKycStatus = async (onboardingToken) => {
       status: doc.status,
       reject_reason: doc.reject_reason,
     })),
+    user: isApproved ? authService.formatUserResponse(user) : null, // User data (only when APPROVED)
     onboarding: {
       role_selected: !!user.role_id,
       kyc_submitted: kycSubmitted,

@@ -607,12 +607,13 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 4. Build onboarding status
 5. Return KYC status with documents
 
-**Success Response (200):**
+**Success Response when KYC is PENDING (200):**
 ```json
 {
   "success": true,
   "message": "KYC status fetched successfully",
   "data": {
+    "token": null,
     "kyc_status": "PENDING",
     "kyc_reject_reason": null,
     "personal_info": {
@@ -625,13 +626,13 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
       {
         "id": 1,
         "document_type": "AADHAAR",
-        "document_number": "XXXX-XXXX-1234",
         "front_doc_url": "http://localhost:3000/uploads/documents/front.jpg",
         "back_doc_url": "http://localhost:3000/uploads/documents/back.jpg",
         "status": "PENDING",
         "reject_reason": null
       }
     ],
+    "user": null,
     "onboarding": {
       "role_selected": true,
       "kyc_submitted": true,
@@ -640,6 +641,53 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
   }
 }
 ```
+
+**Success Response when KYC is APPROVED (200):**
+```json
+{
+  "success": true,
+  "message": "KYC status fetched successfully",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "kyc_status": "APPROVED",
+    "kyc_reject_reason": null,
+    "personal_info": {
+      "full_name": "John Doe",
+      "address": "123 Main Street",
+      "agency_name": "ABC Travels",
+      "profile_image_url": "http://localhost:3000/uploads/profiles/abc.jpg"
+    },
+    "documents": [
+      {
+        "id": 1,
+        "document_type": "AADHAAR",
+        "front_doc_url": "http://localhost:3000/uploads/documents/front.jpg",
+        "back_doc_url": "http://localhost:3000/uploads/documents/back.jpg",
+        "status": "APPROVED",
+        "reject_reason": null
+      }
+    ],
+    "user": {
+      "id": "1",
+      "phone_number": "+919876543210",
+      "full_name": "John Doe",
+      "address": "123 Main Street",
+      "agency_name": "ABC Travels",
+      "profile_image_url": "http://...",
+      "role": "OPERATOR",
+      "kyc_status": "APPROVED",
+      "is_active": true
+    },
+    "onboarding": {
+      "role_selected": true,
+      "kyc_submitted": true,
+      "kyc_status": "APPROVED"
+    }
+  }
+}
+```
+
+> **Note:** When KYC is APPROVED, the response includes a JWT `token` and `user` object. The `onboarding_token` is automatically cleared. Use the JWT token for all subsequent protected API calls.
 
 **Error Responses:**
 
