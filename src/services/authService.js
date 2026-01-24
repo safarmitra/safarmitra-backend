@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { admin } = require('../config/firebase');
 const { User, Role } = require('../models');
 const { Op } = require('sequelize');
@@ -274,6 +275,133 @@ const formatUserResponse = (user) => {
   };
 };
 
+/**
+ * Admin login with email and password
+ * 
+ * Logic:
+ * 1. Find user by email
+ * 2. Verify user exists and has ADMIN role
+ * 3. Verify password
+ * 4. Check if user is active
+ * 5. Generate JWT token
+ * 6. Return token and user data
+ */
+const adminLogin = async (email, password) => {
+  // Step 1: Find user by email
+  const user = await User.findOne({
+    where: { email: email.toLowerCase() },
+    include: [{ model: Role, as: 'role' }],
+  });
+
+  if (!user) {
+    const error = new Error('Invalid email or password');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // Step 2: Verify user has ADMIN role
+  if (!user.role || user.role.code !== 'ADMIN') {
+    const error = new Error('Invalid email or password');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // Step 3: Verify password
+  if (!user.password_hash) {
+    const error = new Error('Invalid email or password');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+  if (!isPasswordValid) {
+    const error = new Error('Invalid email or password');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // Step 4: Check if user is active
+  if (!user.is_active) {
+    const error = new Error('Your account has been suspended. Please contact support.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  // Step 5: Generate JWT token
+  const token = generateToken(user);
+
+  // Step 6: Return token and user data
+  return {
+    token,
+    user: formatAdminResponse(user),
+  };
+};
+
+/**
+ * Format admin user response
+ */
+const formatAdminResponse = (user) => {
+  return {
+    id: user.id.toString(),
+    email: user.email,
+    full_name: user.full_name,
+    role: user.role?.code || null,
+    is_active: user.is_active,
+    created_at: user.created_at,
+  };
+};
+
+/**
+ * Change admin password
+ * 
+ * Logic:
+ * 1. Find user by ID
+ * 2. Verify current password
+ * 3. Hash new password
+ * 4. Update password
+ */
+const changeAdminPassword = async (userId, currentPassword, newPassword) => {
+  const user = await User.findByPk(userId, {
+    include: [{ model: Role, as: 'role' }],
+  });
+
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Verify user is admin
+  if (!user.role || user.role.code !== 'ADMIN') {
+    const error = new Error('Access denied');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  // Verify current password
+  if (!user.password_hash) {
+    const error = new Error('Password not set');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!isPasswordValid) {
+    const error = new Error('Current password is incorrect');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // Hash new password
+  const saltRounds = 10;
+  const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+
+  // Update password
+  await user.update({ password_hash: newPasswordHash });
+
+  return { message: 'Password changed successfully' };
+};
+
 module.exports = {
   verifyFirebaseToken,
   findUserByOnboardingToken,
@@ -283,4 +411,7 @@ module.exports = {
   selectRole,
   logout,
   formatUserResponse,
+  adminLogin,
+  formatAdminResponse,
+  changeAdminPassword,
 };

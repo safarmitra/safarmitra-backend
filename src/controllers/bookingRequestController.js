@@ -1,7 +1,7 @@
 'use strict';
 
 const bookingRequestService = require('../services/bookingRequestService');
-const { success, error } = require('../utils/responseHelper');
+const { sendSuccess, sendError } = require('../utils/responseHelper');
 
 /**
  * Create a new booking request (Driver requesting a car)
@@ -12,10 +12,10 @@ const createBookingRequest = async (req, res) => {
     const driverId = req.user.userId;
     const result = await bookingRequestService.createBookingRequest(req.body, driverId);
 
-    return success(res, 'Booking request created successfully', result, 201);
+    return sendSuccess(res, result, 'Booking request created successfully', null, 201);
   } catch (err) {
     console.error('Create booking request error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -28,10 +28,10 @@ const inviteDriver = async (req, res) => {
     const operatorId = req.user.userId;
     const result = await bookingRequestService.inviteDriver(req.body, operatorId);
 
-    return success(res, 'Driver invited successfully', result, 201);
+    return sendSuccess(res, result, 'Driver invited successfully', null, 201);
   } catch (err) {
     console.error('Invite driver error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -45,15 +45,10 @@ const listSentRequests = async (req, res) => {
     const roleCode = req.user.roleCode;
     const result = await bookingRequestService.listSentRequests(req.query, userId, roleCode);
 
-    return res.status(200).json({
-      success: true,
-      message: 'Sent requests fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
+    return sendSuccess(res, result.data, 'Sent requests fetched successfully', result.meta);
   } catch (err) {
     console.error('List sent requests error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -67,15 +62,10 @@ const listReceivedRequests = async (req, res) => {
     const roleCode = req.user.roleCode;
     const result = await bookingRequestService.listReceivedRequests(req.query, userId, roleCode);
 
-    return res.status(200).json({
-      success: true,
-      message: 'Received requests fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
+    return sendSuccess(res, result.data, 'Received requests fetched successfully', result.meta);
   } catch (err) {
     console.error('List received requests error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -91,10 +81,10 @@ const updateBookingRequestStatus = async (req, res) => {
     const result = await bookingRequestService.updateBookingRequestStatus(requestId, req.body, userId, roleCode);
 
     const statusMessage = req.body.status === 'ACCEPTED' ? 'accepted' : 'rejected';
-    return success(res, `Booking request ${statusMessage} successfully`, result);
+    return sendSuccess(res, result, `Booking request ${statusMessage} successfully`);
   } catch (err) {
     console.error('Update booking request status error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -109,10 +99,10 @@ const cancelBookingRequest = async (req, res) => {
     const roleCode = req.user.roleCode;
     await bookingRequestService.cancelBookingRequest(requestId, userId, roleCode);
 
-    return success(res, 'Booking request cancelled successfully');
+    return sendSuccess(res, null, 'Booking request cancelled successfully');
   } catch (err) {
     console.error('Cancel booking request error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -126,10 +116,10 @@ const getRequestCounts = async (req, res) => {
     const roleCode = req.user.roleCode;
     const counts = await bookingRequestService.getRequestCounts(userId, roleCode);
 
-    return success(res, 'Request counts fetched successfully', counts);
+    return sendSuccess(res, counts, 'Request counts fetched successfully');
   } catch (err) {
     console.error('Get request counts error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -142,10 +132,10 @@ const getPendingRequestCount = async (req, res) => {
     const driverId = req.user.userId;
     const count = await bookingRequestService.getPendingRequestCount(driverId);
 
-    return success(res, 'Pending request count fetched successfully', { pending_count: count });
+    return sendSuccess(res, { pending_count: count }, 'Pending request count fetched successfully');
   } catch (err) {
     console.error('Get pending request count error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 

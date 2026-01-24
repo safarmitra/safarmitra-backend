@@ -65,6 +65,14 @@ module.exports = (sequelize) => {
         type: DataTypes.TEXT,
         allowNull: false,
       },
+      city: {
+        type: DataTypes.STRING(100),
+        allowNull: false,
+      },
+      area: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+      },
       is_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,

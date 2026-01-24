@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { User, UserIdentity, Role } = require('../models');
 const uploadService = require('./uploadService');
 const authService = require('./authService');
+const { compareIds } = require('../utils/helpers');
 
 /**
  * Hash document number for security
@@ -140,7 +141,7 @@ const submitKyc = async (onboardingToken, data, files) => {
       where: { document_number_hash: documentHash },
     });
 
-    if (existingDoc && existingDoc.user_id !== user.id) {
+    if (existingDoc && !compareIds(existingDoc.user_id, user.id)) {
       throw new Error(`${doc.document_type} is already registered with another account`);
     }
 

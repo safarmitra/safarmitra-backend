@@ -1,7 +1,7 @@
 'use strict';
 
 const adminService = require('../services/adminService');
-const { success, error } = require('../utils/responseHelper');
+const { sendSuccess, sendError } = require('../utils/responseHelper');
 
 /**
  * Get dashboard statistics
@@ -10,10 +10,10 @@ const { success, error } = require('../utils/responseHelper');
 const getDashboardStats = async (req, res) => {
   try {
     const stats = await adminService.getDashboardStats();
-    return success(res, 'Dashboard stats fetched successfully', stats);
+    return sendSuccess(res, stats, 'Dashboard stats fetched successfully');
   } catch (err) {
     console.error('Get dashboard stats error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -24,15 +24,10 @@ const getDashboardStats = async (req, res) => {
 const listUsers = async (req, res) => {
   try {
     const result = await adminService.listUsers(req.query);
-    return res.status(200).json({
-      success: true,
-      message: 'Users fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
+    return sendSuccess(res, result.data, 'Users fetched successfully', result.meta);
   } catch (err) {
     console.error('List users error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -43,10 +38,10 @@ const listUsers = async (req, res) => {
 const getUserById = async (req, res) => {
   try {
     const user = await adminService.getUserById(req.params.id);
-    return success(res, 'User fetched successfully', user);
+    return sendSuccess(res, user, 'User fetched successfully');
   } catch (err) {
     console.error('Get user error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -58,10 +53,10 @@ const updateUserStatus = async (req, res) => {
   try {
     const result = await adminService.updateUserStatus(req.params.id, req.body);
     const message = result.is_active ? 'User activated successfully' : 'User suspended successfully';
-    return success(res, message, result);
+    return sendSuccess(res, result, message);
   } catch (err) {
     console.error('Update user status error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -72,15 +67,10 @@ const updateUserStatus = async (req, res) => {
 const listPendingKyc = async (req, res) => {
   try {
     const result = await adminService.listPendingKyc(req.query);
-    return res.status(200).json({
-      success: true,
-      message: 'Pending KYC users fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
+    return sendSuccess(res, result.data, 'Pending KYC users fetched successfully', result.meta);
   } catch (err) {
     console.error('List pending KYC error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -93,10 +83,10 @@ const updateUserKycStatus = async (req, res) => {
     const result = await adminService.updateUserKycStatus(req.params.id, req.body);
     const message =
       result.kyc_status === 'APPROVED' ? 'KYC approved successfully' : 'KYC rejected successfully';
-    return success(res, message, result);
+    return sendSuccess(res, result, message);
   } catch (err) {
     console.error('Update KYC status error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -109,10 +99,10 @@ const updateDocumentStatus = async (req, res) => {
     const result = await adminService.updateDocumentStatus(req.params.id, req.body);
     const message =
       result.status === 'APPROVED' ? 'Document approved successfully' : 'Document rejected successfully';
-    return success(res, message, result);
+    return sendSuccess(res, result, message);
   } catch (err) {
     console.error('Update document status error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -123,15 +113,10 @@ const updateDocumentStatus = async (req, res) => {
 const listCars = async (req, res) => {
   try {
     const result = await adminService.listCars(req.query);
-    return res.status(200).json({
-      success: true,
-      message: 'Cars fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
+    return sendSuccess(res, result.data, 'Cars fetched successfully', result.meta);
   } catch (err) {
     console.error('List cars error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -142,10 +127,10 @@ const listCars = async (req, res) => {
 const getCarById = async (req, res) => {
   try {
     const car = await adminService.getCarById(req.params.id);
-    return success(res, 'Car fetched successfully', car);
+    return sendSuccess(res, car, 'Car fetched successfully');
   } catch (err) {
     console.error('Get car error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -156,10 +141,10 @@ const getCarById = async (req, res) => {
 const deleteCar = async (req, res) => {
   try {
     await adminService.deleteCar(req.params.id);
-    return success(res, 'Car deleted successfully');
+    return sendSuccess(res, null, 'Car deleted successfully');
   } catch (err) {
     console.error('Delete car error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 
@@ -170,15 +155,10 @@ const deleteCar = async (req, res) => {
 const listBookingRequests = async (req, res) => {
   try {
     const result = await adminService.listBookingRequests(req.query);
-    return res.status(200).json({
-      success: true,
-      message: 'Booking requests fetched successfully',
-      data: result.data,
-      meta: result.meta,
-    });
+    return sendSuccess(res, result.data, 'Booking requests fetched successfully', result.meta);
   } catch (err) {
     console.error('List booking requests error:', err);
-    return error(res, err.message, err.statusCode || 500);
+    return sendError(res, err.message, err.statusCode || 500);
   }
 };
 

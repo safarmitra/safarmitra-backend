@@ -1,6 +1,6 @@
 # Safar Mitra - API Documentation
 
-**Version:** 2.1.0  
+**Version:** 2.2.0  
 **Base URL:** `http://localhost:3000/api/v1`  
 **Last Updated:** January 2026
 
@@ -20,6 +20,7 @@
    - [Car APIs](#4-car-apis)
    - [Booking Request APIs](#5-booking-request-apis)
 7. [Flow Diagrams](#flow-diagrams)
+8. [Quick Reference](#quick-reference)
 
 ---
 
@@ -33,7 +34,7 @@ Safar Mitra is a taxi/car rental platform connecting **Operators** (car owners) 
 |------|-------------|
 | **Driver** | Users who rent vehicles |
 | **Operator** | Users who list vehicles for rent |
-| **Admin** | System administrators who verify KYC |
+| **Admin** | System administrators (see Admin API docs) |
 
 ---
 
@@ -79,7 +80,7 @@ Safar Mitra is a taxi/car rental platform connecting **Operators** (car owners) 
 │                                                             │
 │  4. Use appropriate token for subsequent APIs               │
 │                                                             │
-└─────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────��────┘
 ```
 
 ### Header Formats
@@ -124,6 +125,22 @@ Authorization: Bearer <jwt_token>
 }
 ```
 
+### Success Response with Pagination
+
+```json
+{
+  "success": true,
+  "message": "Operation successful",
+  "data": [ ... ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 100,
+    "total_pages": 10
+  }
+}
+```
+
 ### Error Response
 
 ```json
@@ -132,7 +149,12 @@ Authorization: Bearer <jwt_token>
   "message": "Error description",
   "error": {
     "code": "ERROR_CODE",
-    "details": [...]
+    "details": [
+      {
+        "field": "field_name",
+        "message": "Error message"
+      }
+    ]
   }
 }
 ```
@@ -179,6 +201,9 @@ Login existing user or register new user with Firebase token.
 **Endpoint:** `POST /auth/login`  
 **Auth Required:** No (uses Firebase token)
 
+**Middleware Chain:**
+1. `validateLogin` - Validates request body
+
 **Request Body:**
 ```json
 {
@@ -187,10 +212,21 @@ Login existing user or register new user with Firebase token.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
 | `firebase_token` | string | Yes | Firebase ID token from Flutter |
 | `fcm_token` | string | No | FCM device token for push notifications |
+
+**Service Logic (`authService.loginOrRegister`):**
+1. Verify Firebase ID token using Firebase Admin SDK
+2. Extract phone number from decoded token
+3. Find existing user by phone number OR create new user
+4. Update FCM token if provided
+5. Check if user is active (not suspended)
+6. Build onboarding status object
+7. If KYC APPROVED → Generate JWT token, clear onboarding token
+8. If KYC NOT APPROVED → Generate onboarding token (valid 7 days)
+9. Return appropriate token, user data, and onboarding status
 
 **Response when KYC is NOT APPROVED:**
 ```json
@@ -251,33 +287,13 @@ Login existing user or register new user with Firebase token.
 | `APPROVED` | Admin approved KYC - JWT is issued |
 | `REJECTED` | Admin rejected KYC |
 
-**Flutter Navigation Logic:**
-```dart
-void handleLoginResponse(Map<String, dynamic> response) {
-  final token = response['data']['token'];
-  final onboardingToken = response['data']['onboarding_token'];
-  final onboarding = response['data']['onboarding'];
-  
-  if (token != null) {
-    // ✅ KYC APPROVED - Save JWT and go to Dashboard
-    saveJwtToken(token);
-    navigateTo(DashboardScreen());
-  } else {
-    // ❌ KYC NOT APPROVED - Save onboarding token
-    saveOnboardingToken(onboardingToken);
-    
-    if (!onboarding['role_selected']) {
-      navigateTo(RoleSelectionScreen());
-    } else if (!onboarding['kyc_submitted']) {
-      navigateTo(KYCSubmitScreen());
-    } else if (onboarding['kyc_status'] == 'PENDING') {
-      navigateTo(KYCPendingScreen());
-    } else if (onboarding['kyc_status'] == 'REJECTED') {
-      navigateTo(KYCRejectedScreen());
-    }
-  }
-}
-```
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Firebase token is required | Missing token |
+| 401 | Invalid Firebase token | Token verification failed |
+| 403 | Your account has been suspended | User is inactive |
 
 ---
 
@@ -288,6 +304,9 @@ Select user role after first login.
 **Endpoint:** `POST /auth/select-role`  
 **Auth Required:** Onboarding Token
 
+**Middleware Chain:**
+1. `validateSelectRole` - Validates request body
+
 **Request Body:**
 ```json
 {
@@ -296,10 +315,17 @@ Select user role after first login.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `onboarding_token` | string | Yes | Onboarding token from login |
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `onboarding_token` | string | Yes | Valid onboarding token |
 | `role` | string | Yes | `DRIVER` or `OPERATOR` |
+
+**Service Logic (`authService.selectRole`):**
+1. Find user by onboarding token (must not be expired)
+2. Validate role code exists in database
+3. Check user hasn't already completed KYC (role can't change after approval)
+4. Update user's role_id
+5. Return updated user data with onboarding status
 
 **Success Response (200):**
 ```json
@@ -337,7 +363,14 @@ Select user role after first login.
 Logout user and clear FCM token.
 
 **Endpoint:** `POST /auth/logout`  
-**Auth Required:** JWT (only verified users)
+**Auth Required:** JWT
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+
+**Service Logic (`authService.logout`):**
+1. Clear FCM token from user record
+2. Client should discard JWT token
 
 **Success Response (200):**
 ```json
@@ -357,6 +390,15 @@ All User APIs require **JWT token** (KYC must be APPROVED).
 
 **Endpoint:** `GET /users/me`  
 **Auth Required:** JWT
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+
+**Service Logic (`userService.getMyProfile`):**
+1. Get user ID from JWT token
+2. Fetch user with role association
+3. Build onboarding status
+4. Return formatted user profile
 
 **Success Response (200):**
 ```json
@@ -392,13 +434,57 @@ All User APIs require **JWT token** (KYC must be APPROVED).
 **Auth Required:** JWT  
 **Content-Type:** `multipart/form-data`
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `upload.single('profile_image')` - Handles file upload
+3. `validateProfileImage` - Validates image file
+4. `validateUpdateProfile` - Validates request body
+
+**Request Body:**
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
 | `full_name` | string | No | Max 100 characters |
 | `address` | string | No | Max 500 characters |
 | `agency_name` | string | No | Max 150 characters |
-| `dob` | string | No | Date of birth |
-| `profile_image` | file | No | JPEG/JPG/PNG (max 5MB) |
+| `dob` | string | No | Max 15 characters |
+| `profile_image` | file | No | JPEG/JPG/PNG, max 5MB |
+
+**Service Logic (`userService.updateMyProfile`):**
+1. Get user ID from JWT token
+2. Find user by ID
+3. If profile_image provided:
+   - Delete old image from S3 (if exists)
+   - Upload new image to S3
+4. Update user fields
+5. Return updated profile
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "id": "4",
+    "phone_number": "+919876543210",
+    "full_name": "Updated Name",
+    "address": "New Address",
+    "agency_name": "New Agency",
+    "profile_image_url": "http://localhost:3000/uploads/profiles/new.jpg",
+    "dob": "1990-01-15",
+    "role": "OPERATOR",
+    "kyc_status": "APPROVED",
+    "is_active": true
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Only JPEG, JPG and PNG images are allowed | Invalid file type |
+| 400 | Image size must be less than 5MB | File too large |
 
 ---
 
@@ -406,6 +492,91 @@ All User APIs require **JWT token** (KYC must be APPROVED).
 
 **Endpoint:** `GET /users/profile/:id`  
 **Auth Required:** JWT
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+
+**Service Logic (`userService.getProfileById`):**
+1. Find user by ID with role association
+2. Return public profile (limited fields)
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Profile fetched successfully",
+  "data": {
+    "id": "5",
+    "full_name": "John Doe",
+    "agency_name": "XYZ Travels",
+    "profile_image_url": "http://localhost:3000/uploads/profiles/john.jpg",
+    "role": "OPERATOR",
+    "kyc_verified": true
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 404 | User not found | Invalid user ID |
+
+---
+
+### 2.4 List Drivers (For Operators)
+
+List verified drivers for operators to invite.
+
+**Endpoint:** `GET /users/drivers`  
+**Auth Required:** JWT + KYC Approved + OPERATOR role
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `requireRole('OPERATOR')` - Checks user is operator
+4. `validateListDrivers` - Validates query params
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Validation |
+|-----------|------|----------|---------|------------|
+| `search` | string | No | - | Max 100 chars, search by name/phone |
+| `page` | number | No | 1 | Min 1 |
+| `limit` | number | No | 10 | Min 1, Max 50 |
+
+**Service Logic (`userService.listDrivers`):**
+1. Get DRIVER role ID
+2. Build query with filters:
+   - role_id = DRIVER
+   - kyc_status = APPROVED
+   - is_active = true
+3. Apply search filter (name or phone)
+4. Apply pagination
+5. Return list with meta
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Drivers fetched successfully",
+  "data": [
+    {
+      "id": "10",
+      "full_name": "Driver Name",
+      "phone_number": "+919876543210",
+      "profile_image_url": "http://...",
+      "kyc_verified": true
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 50,
+    "total_pages": 5
+  }
+}
+```
 
 ---
 
@@ -429,6 +600,13 @@ GET /kyc/status
 Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 ```
 
+**Service Logic (`kycService.getKycStatus`):**
+1. Find user by onboarding token
+2. Fetch user's documents (UserIdentity)
+3. Build personal info object
+4. Build onboarding status
+5. Return KYC status with documents
+
 **Success Response (200):**
 ```json
 {
@@ -447,6 +625,7 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
       {
         "id": 1,
         "document_type": "AADHAAR",
+        "document_number": "XXXX-XXXX-1234",
         "front_doc_url": "http://localhost:3000/uploads/documents/front.jpg",
         "back_doc_url": "http://localhost:3000/uploads/documents/back.jpg",
         "status": "PENDING",
@@ -462,6 +641,13 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 }
 ```
 
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Onboarding token is required | Missing token |
+| 400 | Invalid or expired onboarding token | Token invalid/expired |
+
 ---
 
 ### 3.2 Submit KYC
@@ -470,11 +656,16 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 **Auth Required:** Onboarding Token  
 **Content-Type:** `multipart/form-data`
 
+**Middleware Chain:**
+1. `upload.any()` - Handles multiple file uploads
+2. `validateKycSubmit` - Validates request body
+3. `validateDocumentFiles` - Validates document files
+
 **Request Body:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `onboarding_token` | string | Yes | Onboarding token from login |
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `onboarding_token` | string | Yes | Valid onboarding token |
 | `full_name` | string | No* | Max 100 characters |
 | `address` | string | No* | Max 500 characters |
 | `agency_name` | string | No | Max 150 characters |
@@ -485,12 +676,24 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 
 **Document Fields:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
 | `documents[i][document_type]` | string | Yes | `AADHAAR`, `DRIVING_LICENSE`, `PAN_CARD` |
 | `documents[i][document_number]` | string | Yes | Document number |
-| `documents[i][front_doc]` | file | Yes | Front image (max 5MB) |
-| `documents[i][back_doc]` | file | No | Back image (max 5MB) |
+| `documents[i][front_doc]` | file | Yes | JPEG/JPG/PNG/PDF (max 5MB) |
+| `documents[i][back_doc]` | file | No | JPEG/JPG/PNG/PDF (max 5MB) |
+
+**Service Logic (`kycService.submitKyc`):**
+1. Find user by onboarding token
+2. Check user has selected a role
+3. Update personal info (full_name, address, agency_name)
+4. Upload profile image to S3 (if provided)
+5. Process each document:
+   - Check if document type already exists
+   - If exists: Update document (upload new files, delete old)
+   - If new: Create document record
+6. Update user's kyc_status to 'PENDING'
+7. Return submission result
 
 **Success Response (200):**
 ```json
@@ -511,6 +714,15 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 }
 ```
 
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Please select a role first | Role not selected |
+| 400 | Front document image is required | Missing front doc |
+| 400 | Only JPEG, JPG, PNG and PDF files are allowed | Invalid file type |
+| 400 | File size must be less than 5MB | File too large |
+
 ---
 
 ## 4. Car APIs
@@ -522,25 +734,312 @@ All Car APIs require **JWT token** (KYC must be APPROVED).
 **Endpoint:** `GET /cars`  
 **Auth Required:** JWT + KYC Approved
 
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `search` | string | No | - | Search by car name |
+| `city` | string | No | - | Filter by city name (case-insensitive) |
+| `area` | string | No | - | Filter by area name (case-insensitive) |
+| `category` | string | No | - | `TAXI` or `PRIVATE` |
+| `fuel_type` | string | No | - | `PETROL`, `DIESEL`, `CNG`, `ELECTRIC` |
+| `transmission` | string | No | - | `MANUAL` or `AUTOMATIC` |
+| `rate_type` | string | No | - | `12HR` or `24HR` |
+| `min_price` | number | No | - | Minimum rate amount |
+| `max_price` | number | No | - | Maximum rate amount |
+| `purposes` | string | No | - | Comma-separated purposes |
+| `is_active` | boolean | No | - | Filter by active status (OPERATOR only) |
+| `page` | number | No | 1 | Page number |
+| `limit` | number | No | 10 | Items per page |
+
+**Service Logic (`carService.listCars`):**
+1. Check user role (DRIVER or OPERATOR)
+2. **For DRIVER:** Show only active cars from all operators
+3. **For OPERATOR:** Show only their own cars (active + inactive)
+4. Apply filters (search, category, fuel_type, etc.)
+5. Apply pagination
+6. Return cars with FULL details (all images, operator info)
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Cars fetched successfully",
+  "data": [
+    {
+      "id": "1",
+      "car_number": "GJ01AB1234",
+      "car_name": "Swift Dzire",
+      "category": "TAXI",
+      "transmission": "MANUAL",
+      "fuel_type": "PETROL",
+      "rate_type": "24HR",
+      "rate_amount": 1200.00,
+      "deposit_amount": 5000.00,
+      "purposes": ["SELF_DRIVE", "CORPORATE"],
+      "instructions": "No smoking in car",
+      "rc_front_url": "http://...",
+      "rc_back_url": "http://...",
+      "is_active": true,
+      "images": [
+        {
+          "id": 1,
+          "image_url": "http://...",
+          "is_primary": true
+        }
+      ],
+      "operator": {
+        "id": "4",
+        "full_name": "Mahesh Bhai",
+        "agency_name": "ABC Travels",
+        "profile_image_url": "http://...",
+        "phone_number": "+919876543210",
+        "kyc_verified": true
+      },
+      "created_at": "2026-01-03T10:00:00.000Z",
+      "updated_at": "2026-01-03T10:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 50,
+    "total_pages": 5
+  }
+}
+```
+
+---
+
 ### 4.2 Get Car by ID
 
 **Endpoint:** `GET /cars/:id`  
 **Auth Required:** JWT + KYC Approved
 
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+
+**Service Logic (`carService.getCarById`):**
+1. Find car by ID with images and operator info
+2. **For DRIVER:** Only allow viewing active cars
+3. **For OPERATOR:** Only allow viewing their own cars
+4. Return full car details
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Car fetched successfully",
+  "data": {
+    "id": "1",
+    "car_number": "GJ01AB1234",
+    "car_name": "Swift Dzire",
+    "category": "TAXI",
+    "transmission": "MANUAL",
+    "fuel_type": "PETROL",
+    "rate_type": "24HR",
+    "rate_amount": 1200.00,
+    "deposit_amount": 5000.00,
+    "purposes": ["SELF_DRIVE", "CORPORATE"],
+    "instructions": "No smoking in car",
+    "rc_front_url": "http://...",
+    "rc_back_url": "http://...",
+    "is_active": true,
+    "images": [...],
+    "operator": {...},
+    "created_at": "2026-01-03T10:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 404 | Car not found | Invalid car ID or inactive (for driver) |
+| 403 | You do not have permission to view this car | Operator viewing other's car |
+
+---
+
 ### 4.3 Create Car
 
 **Endpoint:** `POST /cars`  
-**Auth Required:** JWT + KYC Approved + OPERATOR role
+**Auth Required:** JWT + KYC Approved + OPERATOR role  
+**Content-Type:** `multipart/form-data`
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `requireRole('OPERATOR')` - Checks user is operator
+4. `carUploadFields` - Handles file uploads (multer)
+5. `validateCreateCar` - Validates request body
+6. `validateRcDocuments` - Validates RC documents
+
+**Request Body:**
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `car_number` | string | Yes | Max 20 chars, unique |
+| `car_name` | string | Yes | Max 100 chars |
+| `city` | string | Yes | Max 100 chars (from cities.json) |
+| `area` | string | No | Max 100 chars (from city areas json) |
+| `category` | string | Yes | `TAXI` or `PRIVATE` |
+| `transmission` | string | Yes | `MANUAL` or `AUTOMATIC` |
+| `fuel_type` | string | Yes | `PETROL`, `DIESEL`, `CNG`, `ELECTRIC` |
+| `rate_type` | string | Yes | `12HR` or `24HR` |
+| `rate_amount` | number | Yes | Positive number |
+| `deposit_amount` | number | No | Min 0 |
+| `purposes` | string | No | Comma-separated values |
+| `instructions` | string | No | Max 1000 chars |
+| `is_active` | boolean | No | Default: true |
+| `primary_image_index` | number | No | 0-4, which image is primary |
+| `rc_front` | file | Yes | JPEG/JPG/PNG/PDF, max 5MB |
+| `rc_back` | file | Yes | JPEG/JPG/PNG/PDF, max 5MB |
+| `images` | file[] | No | Max 5 images, JPEG/JPG/PNG/PDF, max 5MB each |
+
+**Service Logic (`carService.createCar`):**
+1. Normalize car number (uppercase, remove spaces)
+2. Check if car_number already exists:
+   - If exists for SAME operator with no images (incomplete) → Delete and retry
+   - If exists for SAME operator with images → Error: "You have already registered"
+   - If exists for DIFFERENT operator → Error: "Already exists"
+3. Upload all files to S3 FIRST (before transaction)
+4. Start database transaction
+5. Create car record
+6. Create car image records
+7. Commit transaction
+8. If DB fails → Rollback and cleanup S3 files
+9. Return created car
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Car created successfully",
+  "data": {
+    "id": "1",
+    "car_number": "GJ01AB1234",
+    "car_name": "Swift Dzire",
+    "category": "TAXI",
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Car registration number is required | Missing car_number |
+| 400 | RC front image is required | Missing rc_front |
+| 400 | RC back image is required | Missing rc_back |
+| 400 | Only JPEG, JPG, PNG and PDF files are allowed | Invalid file type |
+| 400 | File size must be less than 5MB | File too large |
+| 400 | Maximum 5 car images allowed | Too many images |
+| 409 | You have already registered this car | Duplicate for same operator |
+| 409 | A car with this registration number already exists | Duplicate for different operator |
+
+---
 
 ### 4.4 Update Car
 
 **Endpoint:** `PUT /cars/:id`  
-**Auth Required:** JWT + KYC Approved + OPERATOR role
+**Auth Required:** JWT + KYC Approved + OPERATOR role  
+**Content-Type:** `multipart/form-data`
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `requireRole('OPERATOR')` - Checks user is operator
+4. `carUploadFields` - Handles file uploads
+5. `validateUpdateCar` - Validates request body
+6. `validateUpdateFiles` - Validates files
+
+**Request Body (all optional):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `car_name` | string | Max 100 chars |
+| `category` | string | `TAXI` or `PRIVATE` |
+| `transmission` | string | `MANUAL` or `AUTOMATIC` |
+| `fuel_type` | string | `PETROL`, `DIESEL`, `CNG`, `ELECTRIC` |
+| `rate_type` | string | `12HR` or `24HR` |
+| `rate_amount` | number | Positive number |
+| `deposit_amount` | number | Min 0 |
+| `purposes` | string | Comma-separated values |
+| `instructions` | string | Max 1000 chars |
+| `is_active` | boolean | Active status |
+| `primary_image_index` | number | 0-4 |
+| `remove_images` | string | Comma-separated image IDs to remove |
+| `rc_front` | file | New RC front image |
+| `rc_back` | file | New RC back image |
+| `images` | file[] | New images to add |
+
+**Service Logic (`carService.updateCar`):**
+1. Find car and verify ownership
+2. Update RC documents if provided (delete old from S3)
+3. Update car fields
+4. Handle image removal (remove_images):
+   - Delete from S3
+   - Delete from database
+5. Upload new images if provided
+6. Update primary image index
+7. Return updated car
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Car updated successfully",
+  "data": { ... }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 404 | Car not found | Invalid car ID |
+| 403 | You do not have permission to update this car | Not owner |
+
+---
 
 ### 4.5 Delete Car
 
 **Endpoint:** `DELETE /cars/:id`  
 **Auth Required:** JWT + KYC Approved + OPERATOR role
+
+**Middleware Chain:**
+1. `authMiddleware` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `requireRole('OPERATOR')` - Checks user is operator
+
+**Service Logic (`carService.deleteCar`):**
+1. Find car and verify ownership
+2. Delete all car images from S3
+3. Delete RC documents from S3
+4. Delete car images records (cascade)
+5. Delete car record
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Car deleted successfully"
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 404 | Car not found | Invalid car ID |
+| 403 | You do not have permission to delete this car | Not owner |
 
 ---
 
@@ -548,63 +1047,401 @@ All Car APIs require **JWT token** (KYC must be APPROVED).
 
 All Booking Request APIs require **JWT token** (KYC must be APPROVED).
 
-### 5.1 Create Booking Request
+### Booking Request Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 BOOKING REQUEST FLOW                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  DRIVER → OPERATOR (Driver requests a car)                  │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 1. Driver: POST /booking-requests                   │    │
+│  │    → Creates request (initiated_by: DRIVER)         │    │
+│  │ 2. Operator receives notification                   │    │
+│  │ 3. Operator: PUT /booking-requests/:id/status       │    │
+│  │    → ACCEPTED or REJECTED                           │    │
+│  │ 4. Driver receives notification                     │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  OPERATOR → DRIVER (Operator invites a driver)              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ 1. Operator: POST /booking-requests/invite          │    │
+│  │    → Creates invitation (initiated_by: OPERATOR)    │    │
+│  │ 2. Driver receives notification                     │    │
+│  │ 3. Driver: PUT /booking-requests/:id/status         │    │
+│  │    → ACCEPTED or REJECTED                           │    │
+│  │ 4. Operator receives notification                   │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.1 Create Booking Request (Driver)
 
 **Endpoint:** `POST /booking-requests`  
 **Auth Required:** JWT + KYC Approved + DRIVER role
 
-### 5.2 List Booking Requests
+**Middleware Chain:**
+1. `authenticate` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `requireRole('DRIVER')` - Checks user is driver
+4. `validateCreateBookingRequest` - Validates request body
 
-**Endpoint:** `GET /booking-requests`  
-**Auth Required:** JWT + KYC Approved
+**Request Body:**
+```json
+{
+  "car_id": 1,
+  "message": "I need this car for a wedding event"
+}
+```
 
-### 5.3 Update Booking Request Status
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `car_id` | number | Yes | Positive integer |
+| `message` | string | No | Max 1000 chars |
 
-**Endpoint:** `PUT /booking-requests/:id/status`  
+**Service Logic (`bookingRequestService.createBookingRequest`):**
+1. Find the car with operator info
+2. Check if car exists and is active
+3. Check driver is not booking their own car
+4. Check for existing pending request (same car, same driver)
+5. Create booking request (initiated_by: DRIVER)
+6. Send push notification to operator
+7. Return created request with full details
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Booking request created successfully",
+  "data": {
+    "id": "1",
+    "initiated_by": "DRIVER",
+    "message": "I need this car for a wedding event",
+    "status": "PENDING",
+    "reject_reason": null,
+    "created_at": "2026-01-03T10:00:00.000Z",
+    "car": {
+      "id": "1",
+      "car_name": "Swift Dzire",
+      "category": "TAXI",
+      "transmission": "MANUAL",
+      "fuel_type": "PETROL",
+      "rate_type": "24HR",
+      "rate_amount": 1200.00,
+      "deposit_amount": 5000.00,
+      "purposes": ["SELF_DRIVE"],
+      "instructions": null,
+      "is_active": true,
+      "images": [...]
+    },
+    "driver": {
+      "id": "10",
+      "full_name": "Driver Name",
+      "phone_number": "+919876543210",
+      "profile_image_url": "http://...",
+      "kyc_verified": true
+    },
+    "operator": {
+      "id": "4",
+      "full_name": "Operator Name",
+      "agency_name": "ABC Travels",
+      "phone_number": "+919876543211",
+      "profile_image_url": "http://...",
+      "kyc_verified": true
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Car ID is required | Missing car_id |
+| 400 | You cannot book your own car | Self-booking attempt |
+| 400 | You already have a pending request for this car | Duplicate request |
+| 400 | Car is not available for booking | Car is inactive |
+| 404 | Car not found | Invalid car_id |
+
+---
+
+### 5.2 Invite Driver (Operator)
+
+**Endpoint:** `POST /booking-requests/invite`  
 **Auth Required:** JWT + KYC Approved + OPERATOR role
 
-### 5.4 Cancel Booking Request
+**Middleware Chain:**
+1. `authenticate` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `requireRole('OPERATOR')` - Checks user is operator
+4. `validateInviteDriver` - Validates request body
+
+**Request Body:**
+```json
+{
+  "car_id": 1,
+  "driver_id": 10,
+  "message": "Would you like to drive this car?"
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `car_id` | number | Yes | Positive integer |
+| `driver_id` | number | Yes | Positive integer |
+| `message` | string | No | Max 1000 chars |
+
+**Service Logic (`bookingRequestService.inviteDriver`):**
+1. Find the car and verify operator owns it
+2. Check if car is active
+3. Find the driver and verify:
+   - User exists
+   - User is a DRIVER
+   - Driver's KYC is approved
+4. Check operator is not inviting themselves
+5. Check for existing pending invitation (same car, same driver)
+6. Create booking request (initiated_by: OPERATOR)
+7. Send push notification to driver
+8. Return created invitation with full details
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Driver invited successfully",
+  "data": {
+    "id": "2",
+    "initiated_by": "OPERATOR",
+    "message": "Would you like to drive this car?",
+    "status": "PENDING",
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | You cannot invite yourself | Self-invitation |
+| 400 | You already have a pending invitation for this driver | Duplicate invitation |
+| 400 | Car must be active to invite drivers | Car is inactive |
+| 400 | User is not a driver | Target user is not driver |
+| 400 | Driver KYC is not approved | Driver KYC not approved |
+| 403 | You can only invite drivers for your own cars | Not car owner |
+| 404 | Car not found | Invalid car_id |
+| 404 | Driver not found | Invalid driver_id |
+
+---
+
+### 5.3 List Sent Requests
+
+**Endpoint:** `GET /booking-requests/sent`  
+**Auth Required:** JWT + KYC Approved
+
+**Middleware Chain:**
+1. `authenticate` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `validateListBookingRequests` - Validates query params
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Validation |
+|-----------|------|----------|---------|------------|
+| `status` | string | No | ALL | `PENDING`, `ACCEPTED`, `REJECTED`, `ALL` |
+| `car_id` | number | No | - | Positive integer |
+| `page` | number | No | 1 | Min 1 |
+| `limit` | number | No | 10 | Min 1, Max 50 |
+
+**Service Logic (`bookingRequestService.listSentRequests`):**
+- **For DRIVER:** Returns requests where `initiated_by = DRIVER` and `driver_id = userId`
+- **For OPERATOR:** Returns requests where `initiated_by = OPERATOR` and `operator_id = userId`
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Sent requests fetched successfully",
+  "data": [...],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 25,
+    "total_pages": 3
+  }
+}
+```
+
+---
+
+### 5.4 List Received Requests
+
+**Endpoint:** `GET /booking-requests/received`  
+**Auth Required:** JWT + KYC Approved
+
+**Middleware Chain:**
+1. `authenticate` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `validateListBookingRequests` - Validates query params
+
+**Query Parameters:** Same as List Sent Requests
+
+**Service Logic (`bookingRequestService.listReceivedRequests`):**
+- **For DRIVER:** Returns requests where `initiated_by = OPERATOR` and `driver_id = userId`
+- **For OPERATOR:** Returns requests where `initiated_by = DRIVER` and `operator_id = userId`
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Received requests fetched successfully",
+  "data": [...],
+  "meta": {...}
+}
+```
+
+---
+
+### 5.5 Get Request Counts
+
+**Endpoint:** `GET /booking-requests/counts`  
+**Auth Required:** JWT + KYC Approved
+
+**Service Logic (`bookingRequestService.getRequestCounts`):**
+1. Count sent pending requests
+2. Count received pending requests
+3. Return counts
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Request counts fetched successfully",
+  "data": {
+    "sent_pending_count": 5,
+    "received_pending_count": 3,
+    "total_pending_count": 8
+  }
+}
+```
+
+---
+
+### 5.6 Update Request Status
+
+**Endpoint:** `PUT /booking-requests/:id/status`  
+**Auth Required:** JWT + KYC Approved
+
+**Middleware Chain:**
+1. `authenticate` - Verifies JWT token
+2. `requireKyc` - Checks KYC is approved
+3. `validateUpdateStatus` - Validates request body
+
+**Request Body:**
+```json
+{
+  "status": "ACCEPTED"
+}
+```
+
+OR
+
+```json
+{
+  "status": "REJECTED",
+  "reject_reason": "Car is already booked for that date"
+}
+```
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| `status` | string | Yes | `ACCEPTED` or `REJECTED` |
+| `reject_reason` | string | No | Max 500 chars, only when REJECTED |
+
+**Service Logic (`bookingRequestService.updateBookingRequestStatus`):**
+1. Find booking request
+2. Verify user is the RECEIVER of the request:
+   - If `initiated_by = DRIVER` → OPERATOR can respond
+   - If `initiated_by = OPERATOR` → DRIVER can respond
+3. Check request is still PENDING
+4. Update status and reject_reason
+5. Send push notification to initiator
+6. Return updated request
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Booking request accepted successfully",
+  "data": {
+    "id": "1",
+    "status": "ACCEPTED",
+    ...
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Cannot update request. Current status is ACCEPTED | Already processed |
+| 403 | You do not have permission to update this request | Not the receiver |
+| 404 | Booking request not found | Invalid request ID |
+
+---
+
+### 5.7 Cancel Request
 
 **Endpoint:** `DELETE /booking-requests/:id`  
-**Auth Required:** JWT + KYC Approved + DRIVER role
+**Auth Required:** JWT + KYC Approved
 
-### 5.5 Get Pending Request Count
+**Service Logic (`bookingRequestService.cancelBookingRequest`):**
+1. Find booking request
+2. Verify user is the INITIATOR of the request:
+   - If `initiated_by = DRIVER` → DRIVER can cancel
+   - If `initiated_by = OPERATOR` → OPERATOR can cancel
+3. Check request is still PENDING
+4. Delete the request
+5. Send push notification to receiver
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Booking request cancelled successfully"
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 400 | Cannot cancel request. Current status is ACCEPTED | Already processed |
+| 403 | You do not have permission to cancel this request | Not the initiator |
+| 404 | Booking request not found | Invalid request ID |
+
+---
+
+### 5.8 Get Pending Count (Legacy)
 
 **Endpoint:** `GET /booking-requests/pending-count`  
 **Auth Required:** JWT + KYC Approved + DRIVER role
 
----
+**Note:** This is a legacy endpoint. Use `/booking-requests/counts` instead.
 
-## Quick Reference
-
-### All Endpoints Summary
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/auth/login` | Firebase | Login/Register |
-| POST | `/auth/select-role` | Onboarding | Select role |
-| POST | `/auth/logout` | JWT | Logout |
-| GET | `/users/me` | JWT | Get my profile |
-| PUT | `/users/me` | JWT | Update my profile |
-| GET | `/users/profile/:id` | JWT | Get user by ID |
-| GET | `/kyc/status` | Onboarding | Get KYC status |
-| POST | `/kyc/submit` | Onboarding | Submit KYC |
-| GET | `/cars` | JWT + KYC | List cars |
-| GET | `/cars/:id` | JWT + KYC | Get car by ID |
-| POST | `/cars` | JWT + KYC + OPERATOR | Create car |
-| PUT | `/cars/:id` | JWT + KYC + OPERATOR | Update car |
-| DELETE | `/cars/:id` | JWT + KYC + OPERATOR | Delete car |
-| POST | `/booking-requests` | JWT + KYC + DRIVER | Create request |
-| GET | `/booking-requests` | JWT + KYC | List requests |
-| GET | `/booking-requests/pending-count` | JWT + KYC + DRIVER | Get pending count |
-| PUT | `/booking-requests/:id/status` | JWT + KYC + OPERATOR | Update status |
-| DELETE | `/booking-requests/:id` | JWT + KYC + DRIVER | Cancel request |
-
-**Auth Legend:**
-- **Firebase** = Firebase ID token (only for login)
-- **Onboarding** = Onboarding token (`obt_...`)
-- **JWT** = JWT token (`eyJhbG...`)
-- **KYC** = Requires KYC to be APPROVED
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Pending request count fetched successfully",
+  "data": {
+    "pending_count": 5
+  }
+}
+```
 
 ---
 
@@ -667,6 +1504,50 @@ All Booking Request APIs require **JWT token** (KYC must be APPROVED).
 
 ---
 
+## Quick Reference
+
+### All Endpoints Summary
+
+| Method | Endpoint | Auth | Role | Description |
+|--------|----------|------|------|-------------|
+| **Auth** |
+| POST | `/auth/login` | Firebase | - | Login/Register |
+| POST | `/auth/select-role` | Onboarding | - | Select role |
+| POST | `/auth/logout` | JWT | - | Logout |
+| **User** |
+| GET | `/users/me` | JWT | - | Get my profile |
+| PUT | `/users/me` | JWT | - | Update my profile |
+| GET | `/users/profile/:id` | JWT | - | Get user by ID |
+| GET | `/users/drivers` | JWT + KYC | OPERATOR | List drivers |
+| **KYC** |
+| GET | `/kyc/status` | Onboarding | - | Get KYC status |
+| POST | `/kyc/submit` | Onboarding | - | Submit KYC |
+| **Car** |
+| GET | `/cars` | JWT + KYC | - | List cars |
+| GET | `/cars/:id` | JWT + KYC | - | Get car by ID |
+| POST | `/cars` | JWT + KYC | OPERATOR | Create car |
+| PUT | `/cars/:id` | JWT + KYC | OPERATOR | Update car |
+| DELETE | `/cars/:id` | JWT + KYC | OPERATOR | Delete car |
+| **Booking Request** |
+| POST | `/booking-requests` | JWT + KYC | DRIVER | Create request |
+| POST | `/booking-requests/invite` | JWT + KYC | OPERATOR | Invite driver |
+| GET | `/booking-requests/sent` | JWT + KYC | - | List sent requests |
+| GET | `/booking-requests/received` | JWT + KYC | - | List received requests |
+| GET | `/booking-requests/counts` | JWT + KYC | - | Get request counts |
+| GET | `/booking-requests/pending-count` | JWT + KYC | DRIVER | Get pending count (legacy) |
+| PUT | `/booking-requests/:id/status` | JWT + KYC | - | Update status |
+| DELETE | `/booking-requests/:id` | JWT + KYC | - | Cancel request |
+
+**Total: 18 User Endpoints**
+
+**Auth Legend:**
+- **Firebase** = Firebase ID token (only for login)
+- **Onboarding** = Onboarding token (`obt_...`)
+- **JWT** = JWT token (`eyJhbG...`)
+- **KYC** = Requires KYC to be APPROVED
+
+---
+
 ## Testing with cURL
 
 ### Onboarding Flow
@@ -702,14 +1583,41 @@ curl -X POST http://localhost:3000/api/v1/kyc/submit \
 curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"firebase_token": "YOUR_FIREBASE_TOKEN"}'
-# Response: "token": "eyJhbG...", "onboarding_token": null
 
 # Use JWT for all subsequent requests
 curl -X GET http://localhost:3000/api/v1/users/me \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 
-curl -X GET http://localhost:3000/api/v1/cars \
+# List cars
+curl -X GET "http://localhost:3000/api/v1/cars?category=TAXI" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Create car (Operator)
+curl -X POST http://localhost:3000/api/v1/cars \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "car_number=GJ01AB1234" \
+  -F "car_name=Swift Dzire" \
+  -F "category=TAXI" \
+  -F "transmission=MANUAL" \
+  -F "fuel_type=PETROL" \
+  -F "rate_type=24HR" \
+  -F "rate_amount=1200" \
+  -F "rc_front=@/path/to/rc_front.jpg" \
+  -F "rc_back=@/path/to/rc_back.jpg" \
+  -F "images=@/path/to/car1.jpg" \
+  -F "images=@/path/to/car2.jpg"
+
+# Create booking request (Driver)
+curl -X POST http://localhost:3000/api/v1/booking-requests \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"car_id": 1, "message": "I need this car"}'
+
+# Accept booking request (Operator)
+curl -X PUT http://localhost:3000/api/v1/booking-requests/1/status \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "ACCEPTED"}'
 ```
 
 ---

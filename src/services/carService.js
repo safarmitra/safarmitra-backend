@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
-const { Car, CarImage, User, Role } = require('../models');
+const { Car, CarImage, User, Role, sequelize } = require('../models');
 const uploadService = require('./uploadService');
+const { compareIds } = require('../utils/helpers');
 
 /**
  * List cars with filters and pagination
@@ -16,6 +17,8 @@ const uploadService = require('./uploadService');
 const listCars = async (userId, roleCode, filters) => {
   const {
     search,
+    city,
+    area,
     category,
     fuel_type,
     transmission,
@@ -82,6 +85,16 @@ const listCars = async (userId, roleCode, filters) => {
   if (purposes) {
     const purposeArray = purposes.split(',').map((p) => p.trim());
     where.purposes = { [Op.overlap]: purposeArray };
+  }
+
+  // City filter (case-insensitive)
+  if (city) {
+    where.city = { [Op.iLike]: city };
+  }
+
+  // Area filter (case-insensitive)
+  if (area) {
+    where.area = { [Op.iLike]: area };
   }
 
   // Get cars with count
@@ -156,7 +169,7 @@ const getCarById = async (carId, userId, roleCode) => {
     }
   } else if (roleCode === 'OPERATOR') {
     // Operators can only view their own cars
-    if (car.operator_id !== parseInt(userId)) {
+    if (!compareIds(car.operator_id, userId)) {
       throw new Error('You do not have permission to view this car');
     }
   }
@@ -165,16 +178,18 @@ const getCarById = async (carId, userId, roleCode) => {
 };
 
 /**
- * Create new car
+ * Create new car with transaction support
  * 
  * Logic:
- * 1. Check if car_number already exists (must be unique)
- * 2. Upload RC front and back images to S3
- * 3. Upload car images to S3 (if provided)
- * 4. Parse purposes from comma-separated string to array
- * 5. Create car record
- * 6. Create car image records
- * 7. Set primary image
+ * 1. Check if car_number already exists
+ *    - If exists for SAME operator with no images (incomplete), delete and retry
+ *    - If exists for DIFFERENT operator, throw error
+ * 2. Upload all files to S3 FIRST (before transaction)
+ * 3. Start database transaction
+ * 4. Create car record
+ * 5. Create car image records
+ * 6. Commit transaction
+ * 7. If DB fails, rollback and cleanup S3 files
  * 8. Return created car
  */
 const createCar = async (operatorId, data, files) => {
@@ -187,57 +202,149 @@ const createCar = async (operatorId, data, files) => {
   });
 
   if (existingCar) {
-    const error = new Error('A car with this registration number already exists');
-    error.statusCode = 409;
+    // Check if same operator owns it (possible retry scenario)
+    if (compareIds(existingCar.operator_id, operatorId)) {
+      // Check if car has no images (incomplete creation from failed attempt)
+      const imageCount = await CarImage.count({ where: { car_id: existingCar.id } });
+      if (imageCount === 0) {
+        // Delete incomplete car record to allow fresh creation
+        console.log(`Cleaning up incomplete car record: ${existingCar.id} for retry`);
+        
+        // Clean up S3 files from incomplete car if they exist
+        if (existingCar.rc_front_url) {
+          const rcFrontKey = uploadService.getKeyFromUrl(existingCar.rc_front_url);
+          if (rcFrontKey) {
+            try {
+              await uploadService.deleteFromS3(rcFrontKey);
+            } catch (err) {
+              console.error('Error cleaning up RC front:', err.message);
+            }
+          }
+        }
+        if (existingCar.rc_back_url) {
+          const rcBackKey = uploadService.getKeyFromUrl(existingCar.rc_back_url);
+          if (rcBackKey) {
+            try {
+              await uploadService.deleteFromS3(rcBackKey);
+            } catch (err) {
+              console.error('Error cleaning up RC back:', err.message);
+            }
+          }
+        }
+        
+        await existingCar.destroy();
+      } else {
+        // Car exists with images - it's a complete car
+        const error = new Error('You have already registered this car');
+        error.statusCode = 409;
+        throw error;
+      }
+    } else {
+      // Different operator owns this car number
+      const error = new Error('A car with this registration number already exists');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  // Track uploaded files for cleanup on failure
+  const uploadedFiles = [];
+
+  try {
+    // Step 1: Upload all files to S3 FIRST (before any DB operations)
+    const rcFrontFile = files['rc_front'][0];
+    const rcBackFile = files['rc_back'][0];
+
+    const rcFrontUpload = await uploadService.uploadToS3(rcFrontFile, 'cars/rc');
+    uploadedFiles.push(rcFrontUpload.url);
+
+    const rcBackUpload = await uploadService.uploadToS3(rcBackFile, 'cars/rc');
+    uploadedFiles.push(rcBackUpload.url);
+
+    // Upload car images
+    const imageFiles = files['images'] || [];
+    const uploadedImages = [];
+    
+    for (const imageFile of imageFiles) {
+      const imageUpload = await uploadService.uploadToS3(imageFile, 'cars/images');
+      uploadedFiles.push(imageUpload.url);
+      uploadedImages.push(imageUpload);
+    }
+
+    // Parse purposes
+    let purposes = null;
+    if (data.purposes) {
+      purposes = data.purposes.split(',').map((p) => p.trim());
+    }
+
+    // Step 2: Start database transaction
+    const transaction = await sequelize.transaction();
+
+    try {
+      // Create car record
+      const car = await Car.create({
+        operator_id: operatorId,
+        car_number: carNumber,
+        car_name: data.car_name,
+        city: data.city,
+        area: data.area || null,
+        category: data.category,
+        transmission: data.transmission,
+        fuel_type: data.fuel_type,
+        rate_type: data.rate_type,
+        rate_amount: parseFloat(data.rate_amount),
+        deposit_amount: data.deposit_amount ? parseFloat(data.deposit_amount) : null,
+        purposes,
+        instructions: data.instructions || null,
+        rc_front_url: rcFrontUpload.url,
+        rc_back_url: rcBackUpload.url,
+        is_active: data.is_active !== undefined ? data.is_active === 'true' || data.is_active === true : true,
+      }, { transaction });
+
+      // Create car image records
+      const primaryIndex = data.primary_image_index ? parseInt(data.primary_image_index) : 0;
+
+      for (let i = 0; i < uploadedImages.length; i++) {
+        await CarImage.create({
+          car_id: car.id,
+          image_url: uploadedImages[i].url,
+          is_primary: i === primaryIndex,
+        }, { transaction });
+      }
+
+      // Commit transaction
+      await transaction.commit();
+
+      // Return created car
+      return getCarById(car.id, operatorId, 'OPERATOR');
+
+    } catch (dbError) {
+      // Rollback transaction on DB error
+      await transaction.rollback();
+      console.error('Database error during car creation, rolling back:', dbError.message);
+      
+      // Re-throw to trigger S3 cleanup
+      throw dbError;
+    }
+
+  } catch (error) {
+    // Clean up uploaded S3 files on any failure
+    console.error('Car creation failed, cleaning up uploaded files...');
+    
+    for (const fileUrl of uploadedFiles) {
+      const fileKey = uploadService.getKeyFromUrl(fileUrl);
+      if (fileKey) {
+        try {
+          await uploadService.deleteFromS3(fileKey);
+          console.log(`Cleaned up S3 file: ${fileKey}`);
+        } catch (cleanupError) {
+          console.error(`Failed to cleanup S3 file ${fileKey}:`, cleanupError.message);
+        }
+      }
+    }
+
     throw error;
   }
-
-  // Upload RC documents
-  const rcFrontFile = files['rc_front'][0];
-  const rcBackFile = files['rc_back'][0];
-
-  const rcFrontUpload = await uploadService.uploadToS3(rcFrontFile, 'cars/rc');
-  const rcBackUpload = await uploadService.uploadToS3(rcBackFile, 'cars/rc');
-
-  // Parse purposes
-  let purposes = null;
-  if (data.purposes) {
-    purposes = data.purposes.split(',').map((p) => p.trim());
-  }
-
-  // Create car
-  const car = await Car.create({
-    operator_id: operatorId,
-    car_number: carNumber,
-    car_name: data.car_name,
-    category: data.category,
-    transmission: data.transmission,
-    fuel_type: data.fuel_type,
-    rate_type: data.rate_type,
-    rate_amount: parseFloat(data.rate_amount),
-    deposit_amount: data.deposit_amount ? parseFloat(data.deposit_amount) : null,
-    purposes,
-    instructions: data.instructions || null,
-    rc_front_url: rcFrontUpload.url,
-    rc_back_url: rcBackUpload.url,
-    is_active: data.is_active !== undefined ? data.is_active === 'true' || data.is_active === true : true,
-  });
-
-  // Upload and create car images
-  const imageFiles = files['images'] || [];
-  const primaryIndex = data.primary_image_index ? parseInt(data.primary_image_index) : 0;
-
-  for (let i = 0; i < imageFiles.length; i++) {
-    const imageUpload = await uploadService.uploadToS3(imageFiles[i], 'cars/images');
-    await CarImage.create({
-      car_id: car.id,
-      image_url: imageUpload.url,
-      is_primary: i === primaryIndex,
-    });
-  }
-
-  // Return created car
-  return getCarById(car.id, operatorId, 'OPERATOR');
 };
 
 /**
@@ -259,7 +366,7 @@ const updateCar = async (carId, operatorId, data, files) => {
     throw new Error('Car not found');
   }
 
-  if (car.operator_id !== parseInt(operatorId)) {
+  if (!compareIds(car.operator_id, operatorId)) {
     throw new Error('You do not have permission to update this car');
   }
 
@@ -267,7 +374,7 @@ const updateCar = async (carId, operatorId, data, files) => {
 
   // Update basic fields
   const allowedFields = [
-    'car_name', 'category', 'transmission', 'fuel_type',
+    'car_name', 'city', 'area', 'category', 'transmission', 'fuel_type',
     'rate_type', 'rate_amount', 'deposit_amount', 'instructions', 'is_active'
   ];
 
@@ -400,7 +507,7 @@ const deleteCar = async (carId, operatorId) => {
     throw new Error('Car not found');
   }
 
-  if (car.operator_id !== parseInt(operatorId)) {
+  if (!compareIds(car.operator_id, operatorId)) {
     throw new Error('You do not have permission to delete this car');
   }
 
@@ -461,6 +568,8 @@ const formatCarDetail = (car) => {
     id: car.id,
     car_number: car.car_number,
     car_name: car.car_name,
+    city: car.city,
+    area: car.area,
     category: car.category,
     transmission: car.transmission,
     fuel_type: car.fuel_type,

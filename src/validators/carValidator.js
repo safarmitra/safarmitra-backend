@@ -11,6 +11,14 @@ const createCarSchema = Joi.object({
     'string.max': 'Car name must be less than 100 characters',
     'any.required': 'Car name is required',
   }),
+  city: Joi.string().max(100).required().messages({
+    'string.empty': 'City is required',
+    'string.max': 'City must be less than 100 characters',
+    'any.required': 'City is required',
+  }),
+  area: Joi.string().max(100).allow(null, '').messages({
+    'string.max': 'Area must be less than 100 characters',
+  }),
   category: Joi.string().valid('TAXI', 'PRIVATE').required().messages({
     'string.empty': 'Category is required',
     'any.only': 'Category must be either TAXI or PRIVATE',
@@ -59,6 +67,12 @@ const createCarSchema = Joi.object({
 const updateCarSchema = Joi.object({
   car_name: Joi.string().max(100).messages({
     'string.max': 'Car name must be less than 100 characters',
+  }),
+  city: Joi.string().max(100).messages({
+    'string.max': 'City must be less than 100 characters',
+  }),
+  area: Joi.string().max(100).allow(null, '').messages({
+    'string.max': 'Area must be less than 100 characters',
   }),
   category: Joi.string().valid('TAXI', 'PRIVATE').messages({
     'any.only': 'Category must be either TAXI or PRIVATE',

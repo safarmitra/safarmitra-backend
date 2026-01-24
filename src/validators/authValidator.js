@@ -27,6 +27,37 @@ const selectRoleSchema = Joi.object({
 });
 
 /**
+ * Admin login schema
+ */
+const adminLoginSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.empty': 'Email is required',
+    'string.email': 'Please provide a valid email address',
+    'any.required': 'Email is required',
+  }),
+  password: Joi.string().min(6).required().messages({
+    'string.empty': 'Password is required',
+    'string.min': 'Password must be at least 6 characters',
+    'any.required': 'Password is required',
+  }),
+});
+
+/**
+ * Change password schema
+ */
+const changePasswordSchema = Joi.object({
+  current_password: Joi.string().required().messages({
+    'string.empty': 'Current password is required',
+    'any.required': 'Current password is required',
+  }),
+  new_password: Joi.string().min(6).required().messages({
+    'string.empty': 'New password is required',
+    'string.min': 'New password must be at least 6 characters',
+    'any.required': 'New password is required',
+  }),
+});
+
+/**
  * Validate request body against schema
  */
 const validate = (schema) => {
@@ -56,4 +87,6 @@ const validate = (schema) => {
 module.exports = {
   validateLogin: validate(loginSchema),
   validateSelectRole: validate(selectRoleSchema),
+  validateAdminLogin: validate(adminLoginSchema),
+  validateChangePassword: validate(changePasswordSchema),
 };

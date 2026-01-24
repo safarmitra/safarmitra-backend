@@ -69,8 +69,45 @@ const logout = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /auth/admin/login
+ * Admin login with email and password
+ */
+const adminLogin = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    const result = await authService.adminLogin(email, password);
+
+    return sendSuccess(res, result, 'Admin login successful');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PUT /auth/admin/change-password
+ * Change admin password
+ * 
+ * Requires JWT (admin only)
+ */
+const changeAdminPassword = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const { current_password, new_password } = req.body;
+
+    const result = await authService.changeAdminPassword(userId, current_password, new_password);
+
+    return sendSuccess(res, null, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   login,
   selectRole,
   logout,
+  adminLogin,
+  changeAdminPassword,
 };
