@@ -85,6 +85,16 @@ router.get(
 );
 
 /**
+ * @route   GET /booking-requests/daily-limits
+ * @desc    Get daily request/invitation limits info for current user
+ * @access  DRIVER and OPERATOR
+ */
+router.get(
+  '/daily-limits',
+  bookingRequestController.getDailyLimits
+);
+
+/**
  * @route   PUT /booking-requests/:id/status
  * @desc    Update booking request status (Accept/Reject)
  * @access  DRIVER and OPERATOR (receiver of the request)

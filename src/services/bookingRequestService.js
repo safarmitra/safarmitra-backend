@@ -3,6 +3,58 @@
 const { BookingRequest, Car, CarImage, User, Role } = require('../models');
 const { Op } = require('sequelize');
 const notificationService = require('./notificationService');
+const { DRIVER_DAILY_REQUEST_LIMIT, OPERATOR_DAILY_INVITATION_LIMIT } = require('../config/limits');
+
+/**
+ * Get the start of today (midnight) for daily limit calculations
+ * @returns {Date} Start of today
+ */
+const getTodayStart = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
+/**
+ * Get daily request count for a user
+ * @param {number} userId - User ID
+ * @param {string} initiatedBy - 'DRIVER' or 'OPERATOR'
+ * @returns {Promise<number>} Count of requests made today
+ */
+const getDailyRequestCount = async (userId, initiatedBy) => {
+  const todayStart = getTodayStart();
+
+  const whereClause = {
+    initiated_by: initiatedBy,
+    created_at: { [Op.gte]: todayStart },
+  };
+
+  if (initiatedBy === 'DRIVER') {
+    whereClause.driver_id = userId;
+  } else {
+    whereClause.operator_id = userId;
+  }
+
+  return BookingRequest.count({ where: whereClause });
+};
+
+/**
+ * Get daily limits info for a user
+ * @param {number} userId - User ID
+ * @param {string} roleCode - User's role code
+ * @returns {Promise<Object>} Daily limits info
+ */
+const getDailyLimits = async (userId, roleCode) => {
+  const initiatedBy = roleCode === 'DRIVER' ? 'DRIVER' : 'OPERATOR';
+  const dailyLimit = roleCode === 'DRIVER' ? DRIVER_DAILY_REQUEST_LIMIT : OPERATOR_DAILY_INVITATION_LIMIT;
+  const usedToday = await getDailyRequestCount(userId, initiatedBy);
+
+  return {
+    daily_limit: dailyLimit,
+    used_today: usedToday,
+    remaining: Math.max(0, dailyLimit - usedToday),
+  };
+};
 
 /**
  * Create a new booking request (Driver requesting a car)
@@ -12,6 +64,16 @@ const notificationService = require('./notificationService');
  */
 const createBookingRequest = async (data, driverId) => {
   const { car_id, message } = data;
+
+  // Check daily request limit for driver
+  const dailyCount = await getDailyRequestCount(driverId, 'DRIVER');
+  if (dailyCount >= DRIVER_DAILY_REQUEST_LIMIT) {
+    const error = new Error(
+      `You have reached your daily limit of ${DRIVER_DAILY_REQUEST_LIMIT} requests. Please try again tomorrow.`
+    );
+    error.statusCode = 429;
+    throw error;
+  }
 
   // Find the driver
   const driver = await User.findByPk(driverId, {
@@ -101,6 +163,16 @@ const createBookingRequest = async (data, driverId) => {
  */
 const inviteDriver = async (data, operatorId) => {
   const { car_id, driver_id, message } = data;
+
+  // Check daily invitation limit for operator
+  const dailyCount = await getDailyRequestCount(operatorId, 'OPERATOR');
+  if (dailyCount >= OPERATOR_DAILY_INVITATION_LIMIT) {
+    const error = new Error(
+      `You have reached your daily limit of ${OPERATOR_DAILY_INVITATION_LIMIT} invitations. Please try again tomorrow.`
+    );
+    error.statusCode = 429;
+    throw error;
+  }
 
   // Find the operator
   const operator = await User.findByPk(operatorId, {
@@ -765,4 +837,5 @@ module.exports = {
   cancelBookingRequest,
   getRequestCounts,
   getPendingRequestCount,
+  getDailyLimits,
 };

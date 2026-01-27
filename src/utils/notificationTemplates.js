@@ -20,6 +20,9 @@ const NOTIFICATION_TYPES = {
   BOOKING_REQUEST_CANCELLED: 'BOOKING_REQUEST_CANCELLED',
   BOOKING_INVITATION_CANCELLED: 'BOOKING_INVITATION_CANCELLED',
 
+  // Limit Events
+  DAILY_LIMIT_REACHED: 'DAILY_LIMIT_REACHED',
+
   // KYC Events
   KYC_APPROVED: 'KYC_APPROVED',
   KYC_REJECTED: 'KYC_REJECTED',
@@ -216,6 +219,24 @@ const accountActivated = () => ({
 });
 
 /**
+ * Limit Templates
+ */
+
+// Daily limit reached -> Notify User
+const dailyLimitReached = (limit, roleCode) => ({
+  title: 'Daily Limit Reached',
+  body:
+    roleCode === 'DRIVER'
+      ? `You've reached your daily limit of ${limit} requests. Try again tomorrow.`
+      : `You've reached your daily limit of ${limit} invitations. Try again tomorrow.`,
+  data: {
+    type: NOTIFICATION_TYPES.DAILY_LIMIT_REACHED,
+    limit: String(limit),
+    click_action: CLICK_ACTIONS.OPEN_DASHBOARD,
+  },
+});
+
+/**
  * Helper function to format document type for display
  */
 const formatDocumentType = (type) => {
@@ -250,4 +271,7 @@ module.exports = {
   // Account templates
   accountSuspended,
   accountActivated,
+
+  // Limit templates
+  dailyLimitReached,
 };

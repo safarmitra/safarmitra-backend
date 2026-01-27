@@ -139,6 +139,23 @@ const getPendingRequestCount = async (req, res) => {
   }
 };
 
+/**
+ * Get daily limits info for current user
+ * GET /booking-requests/daily-limits
+ */
+const getDailyLimits = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const roleCode = req.user.roleCode;
+    const limits = await bookingRequestService.getDailyLimits(userId, roleCode);
+
+    return sendSuccess(res, limits, 'Daily limits fetched successfully');
+  } catch (err) {
+    console.error('Get daily limits error:', err);
+    return sendError(res, err.message, err.statusCode || 500);
+  }
+};
+
 module.exports = {
   createBookingRequest,
   inviteDriver,
@@ -148,4 +165,5 @@ module.exports = {
   cancelBookingRequest,
   getRequestCounts,
   getPendingRequestCount,
+  getDailyLimits,
 };

@@ -6,6 +6,7 @@ const userRoutes = require('./userRoutes');
 const kycRoutes = require('./kycRoutes');
 const carRoutes = require('./carRoutes');
 const bookingRequestRoutes = require('./bookingRequestRoutes');
+const notificationRoutes = require('./notificationRoutes');
 const adminRoutes = require('./adminRoutes');
 
 // Auth routes
@@ -22,6 +23,9 @@ router.use('/cars', carRoutes);
 
 // Booking request routes
 router.use('/booking-requests', bookingRequestRoutes);
+
+// Notification routes
+router.use('/notifications', notificationRoutes);
 
 // Admin routes
 router.use('/admin', adminRoutes);

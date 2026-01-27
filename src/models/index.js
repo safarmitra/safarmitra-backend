@@ -33,6 +33,7 @@ const Car = require('./Car')(sequelize);
 const CarImage = require('./CarImage')(sequelize);
 const BookingRequest = require('./BookingRequest')(sequelize);
 const Location = require('./Location')(sequelize);
+const Notification = require('./Notification')(sequelize);
 
 // Define associations
 // Role - User
@@ -61,6 +62,10 @@ BookingRequest.belongsTo(User, { foreignKey: 'driver_id', as: 'driver' });
 User.hasMany(BookingRequest, { foreignKey: 'operator_id', as: 'operatorRequests' });
 BookingRequest.belongsTo(User, { foreignKey: 'operator_id', as: 'requestOperator' });
 
+// User - Notification
+User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
+Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 module.exports = {
   sequelize,
   Sequelize,
@@ -71,4 +76,5 @@ module.exports = {
   CarImage,
   BookingRequest,
   Location,
+  Notification,
 };

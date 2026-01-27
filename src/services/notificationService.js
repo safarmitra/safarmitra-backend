@@ -1,31 +1,59 @@
 'use strict';
 
 const { admin } = require('../config/firebase');
-const { User } = require('../models');
+const { User, Notification } = require('../models');
 const templates = require('../utils/notificationTemplates');
 
 /**
  * Notification Service
  * Handles sending push notifications via Firebase Cloud Messaging (FCM)
+ * and storing notification history in the database
  */
 
 /**
- * Send a push notification to a user
+ * Save notification to database
+ * @param {number} userId - User ID
+ * @param {Object} template - Notification template { title, body, data }
+ * @param {boolean} fcmSent - Whether FCM was sent successfully
+ * @param {string|null} fcmResponse - FCM response or error message
+ * @returns {Promise<Object>} Created notification record
+ */
+const saveNotification = async (userId, template, fcmSent = false, fcmResponse = null) => {
+  try {
+    const notification = await Notification.create({
+      user_id: userId,
+      type: template.data?.type || 'GENERAL',
+      title: template.title,
+      body: template.body,
+      data: template.data || {},
+      is_read: false,
+      fcm_sent: fcmSent,
+      fcm_response: fcmResponse,
+    });
+    return notification;
+  } catch (error) {
+    console.error('Error saving notification to database:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Send a push notification via FCM
  * @param {string} fcmToken - User's FCM token
  * @param {string} title - Notification title
  * @param {string} body - Notification body
  * @param {Object} data - Additional data payload
- * @returns {Promise<Object|null>} FCM response or null if failed
+ * @returns {Promise<Object>} { success: boolean, response: string|null }
  */
-const sendNotification = async (fcmToken, title, body, data = {}) => {
+const sendFcmNotification = async (fcmToken, title, body, data = {}) => {
   if (!fcmToken) {
-    console.log('No FCM token provided, skipping notification');
-    return null;
+    console.log('No FCM token provided, skipping FCM notification');
+    return { success: false, response: 'No FCM token' };
   }
 
   if (!admin) {
-    console.log('Firebase not initialized, skipping notification');
-    return null;
+    console.log('Firebase not initialized, skipping FCM notification');
+    return { success: false, response: 'Firebase not initialized' };
   }
 
   try {
@@ -60,26 +88,28 @@ const sendNotification = async (fcmToken, title, body, data = {}) => {
     };
 
     const response = await admin.messaging().send(message);
-    console.log(`✅ Notification sent successfully: ${response}`);
-    return response;
+    console.log(`✅ FCM notification sent successfully: ${response}`);
+    return { success: true, response };
   } catch (error) {
-    console.error('❌ Error sending notification:', error.message);
-    
+    console.error('❌ Error sending FCM notification:', error.message);
+
     // If token is invalid, we might want to clear it from the database
-    if (error.code === 'messaging/invalid-registration-token' ||
-        error.code === 'messaging/registration-token-not-registered') {
+    if (
+      error.code === 'messaging/invalid-registration-token' ||
+      error.code === 'messaging/registration-token-not-registered'
+    ) {
       console.log('Invalid FCM token, should be cleared from database');
     }
-    
-    return null;
+
+    return { success: false, response: error.message };
   }
 };
 
 /**
- * Send notification to a user by their ID
+ * Send notification to a user by their ID (saves to DB + sends FCM)
  * @param {number} userId - User ID
  * @param {Object} template - Notification template { title, body, data }
- * @returns {Promise<Object|null>}
+ * @returns {Promise<Object|null>} Created notification record
  */
 const sendToUser = async (userId, template) => {
   try {
@@ -87,12 +117,28 @@ const sendToUser = async (userId, template) => {
       attributes: ['id', 'fcm_token', 'full_name'],
     });
 
-    if (!user || !user.fcm_token) {
-      console.log(`User ${userId} has no FCM token, skipping notification`);
+    if (!user) {
+      console.log(`User ${userId} not found, skipping notification`);
       return null;
     }
 
-    return sendNotification(user.fcm_token, template.title, template.body, template.data);
+    // Send FCM notification
+    const fcmResult = await sendFcmNotification(
+      user.fcm_token,
+      template.title,
+      template.body,
+      template.data
+    );
+
+    // Save notification to database
+    const notification = await saveNotification(
+      userId,
+      template,
+      fcmResult.success,
+      fcmResult.response
+    );
+
+    return notification;
   } catch (error) {
     console.error(`Error sending notification to user ${userId}:`, error.message);
     return null;
@@ -106,10 +152,103 @@ const sendToUser = async (userId, template) => {
  * @returns {Promise<Object[]>}
  */
 const sendToUsers = async (userIds, template) => {
-  const results = await Promise.all(
-    userIds.map((userId) => sendToUser(userId, template))
-  );
+  const results = await Promise.all(userIds.map((userId) => sendToUser(userId, template)));
   return results;
+};
+
+/**
+ * Get user's notifications (paginated)
+ * @param {number} userId - User ID
+ * @param {Object} options - Query options
+ * @returns {Promise<Object>} Paginated notifications
+ */
+const getUserNotifications = async (userId, options = {}) => {
+  const { page = 1, limit = 20, type = null } = options;
+  const offset = (page - 1) * limit;
+
+  const where = { user_id: userId };
+  if (type) {
+    where.type = type;
+  }
+
+  const { count, rows } = await Notification.findAndCountAll({
+    where,
+    order: [['created_at', 'DESC']],
+    limit,
+    offset,
+  });
+
+  // Get unread count
+  const unreadCount = await Notification.count({
+    where: { user_id: userId, is_read: false },
+  });
+
+  return {
+    data: rows.map((n) => ({
+      id: n.id.toString(),
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      data: n.data,
+      is_read: n.is_read,
+      created_at: n.created_at,
+    })),
+    meta: {
+      page,
+      limit,
+      total: count,
+      total_pages: Math.ceil(count / limit),
+      unread_count: unreadCount,
+    },
+  };
+};
+
+/**
+ * Get unread notification count for a user
+ * @param {number} userId - User ID
+ * @returns {Promise<number>}
+ */
+const getUnreadCount = async (userId) => {
+  return Notification.count({
+    where: { user_id: userId, is_read: false },
+  });
+};
+
+/**
+ * Mark a notification as read
+ * @param {number} notificationId - Notification ID
+ * @param {number} userId - User ID (for ownership verification)
+ * @returns {Promise<Object|null>}
+ */
+const markAsRead = async (notificationId, userId) => {
+  const notification = await Notification.findOne({
+    where: { id: notificationId, user_id: userId },
+  });
+
+  if (!notification) {
+    return null;
+  }
+
+  notification.is_read = true;
+  await notification.save();
+
+  return {
+    id: notification.id.toString(),
+    is_read: notification.is_read,
+  };
+};
+
+/**
+ * Mark all notifications as read for a user
+ * @param {number} userId - User ID
+ * @returns {Promise<number>} Number of notifications marked as read
+ */
+const markAllAsRead = async (userId) => {
+  const [updatedCount] = await Notification.update(
+    { is_read: true },
+    { where: { user_id: userId, is_read: false } }
+  );
+  return updatedCount;
 };
 
 // ==================== Booking Request Notifications ====================
@@ -141,7 +280,14 @@ const notifyBookingRequestAccepted = async (driverId, operatorName, carName, req
 /**
  * Notify driver when operator rejects their request
  */
-const notifyBookingRequestRejected = async (driverId, operatorName, carName, requestId, carId, reason = null) => {
+const notifyBookingRequestRejected = async (
+  driverId,
+  operatorName,
+  carName,
+  requestId,
+  carId,
+  reason = null
+) => {
   const template = templates.bookingRequestRejected(operatorName, carName, requestId, carId, reason);
   return sendToUser(driverId, template);
 };
@@ -157,7 +303,14 @@ const notifyBookingInvitationAccepted = async (operatorId, driverName, carName, 
 /**
  * Notify operator when driver rejects their invitation
  */
-const notifyBookingInvitationRejected = async (operatorId, driverName, carName, requestId, carId, reason = null) => {
+const notifyBookingInvitationRejected = async (
+  operatorId,
+  driverName,
+  carName,
+  requestId,
+  carId,
+  reason = null
+) => {
   const template = templates.bookingInvitationRejected(driverName, carName, requestId, carId, reason);
   return sendToUser(operatorId, template);
 };
@@ -176,6 +329,16 @@ const notifyBookingRequestCancelled = async (operatorId, driverName, carName, ca
 const notifyBookingInvitationCancelled = async (driverId, operatorName, carName, carId) => {
   const template = templates.bookingInvitationCancelled(operatorName, carName, carId);
   return sendToUser(driverId, template);
+};
+
+// ==================== Limit Notifications ====================
+
+/**
+ * Notify user when daily limit is reached
+ */
+const notifyDailyLimitReached = async (userId, limit, roleCode) => {
+  const template = templates.dailyLimitReached(limit, roleCode);
+  return sendToUser(userId, template);
 };
 
 // ==================== KYC Notifications ====================
@@ -232,9 +395,15 @@ const notifyAccountActivated = async (userId) => {
 
 module.exports = {
   // Core functions
-  sendNotification,
   sendToUser,
   sendToUsers,
+  saveNotification,
+
+  // Notification history functions
+  getUserNotifications,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
 
   // Booking request notifications
   notifyBookingRequestCreated,
@@ -245,6 +414,9 @@ module.exports = {
   notifyBookingInvitationRejected,
   notifyBookingRequestCancelled,
   notifyBookingInvitationCancelled,
+
+  // Limit notifications
+  notifyDailyLimitReached,
 
   // KYC notifications
   notifyKycApproved,

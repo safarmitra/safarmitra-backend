@@ -19,6 +19,7 @@
    - [KYC APIs](#3-kyc-apis)
    - [Car APIs](#4-car-apis)
    - [Booking Request APIs](#5-booking-request-apis)
+   - [Notification APIs](#6-notification-apis)
 7. [Flow Diagrams](#flow-diagrams)
 8. [Quick Reference](#quick-reference)
 
@@ -1493,6 +1494,237 @@ OR
 
 ---
 
+### 5.9 Get Daily Limits
+
+Get the daily request/invitation limits for the current user.
+
+**Endpoint:** `GET /booking-requests/daily-limits`  
+**Auth Required:** JWT + KYC Approved
+
+**Service Logic (`bookingRequestService.getDailyLimits`):**
+1. Get user's role (DRIVER or OPERATOR)
+2. Count requests/invitations made today (since midnight)
+3. Return limit info based on role:
+   - **DRIVER:** Daily request limit (default: 5)
+   - **OPERATOR:** Daily invitation limit (default: 5)
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Daily limits fetched successfully",
+  "data": {
+    "daily_limit": 5,
+    "used_today": 3,
+    "remaining": 2
+  }
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `daily_limit` | number | Maximum requests/invitations allowed per day |
+| `used_today` | number | Number of requests/invitations made today |
+| `remaining` | number | Remaining requests/invitations for today |
+
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DRIVER_DAILY_REQUEST_LIMIT` | 5 | Max requests a driver can send per day |
+| `OPERATOR_DAILY_INVITATION_LIMIT` | 5 | Max invitations an operator can send per day |
+
+**Note:** When the daily limit is reached, creating new requests/invitations will return a `429 Too Many Requests` error:
+
+```json
+{
+  "success": false,
+  "message": "You have reached your daily limit of 5 requests. Please try again tomorrow."
+}
+```
+
+---
+
+## 6. Notification APIs
+
+All Notification APIs require **JWT token** (authentication required).
+
+### Notification Types
+
+| Type | Description | Recipient |
+|------|-------------|-----------|
+| `BOOKING_REQUEST_CREATED` | Driver requested a car | Operator |
+| `BOOKING_INVITATION_CREATED` | Operator invited driver | Driver |
+| `BOOKING_REQUEST_ACCEPTED` | Operator accepted request | Driver |
+| `BOOKING_REQUEST_REJECTED` | Operator rejected request | Driver |
+| `BOOKING_INVITATION_ACCEPTED` | Driver accepted invitation | Operator |
+| `BOOKING_INVITATION_REJECTED` | Driver rejected invitation | Operator |
+| `BOOKING_REQUEST_CANCELLED` | Driver cancelled request | Operator |
+| `BOOKING_INVITATION_CANCELLED` | Operator cancelled invitation | Driver |
+| `DAILY_LIMIT_REACHED` | Daily request/invitation limit reached | User |
+| `KYC_APPROVED` | KYC approved by admin | User |
+| `KYC_REJECTED` | KYC rejected by admin | User |
+| `DOCUMENT_APPROVED` | Document approved by admin | User |
+| `DOCUMENT_REJECTED` | Document rejected by admin | User |
+| `ACCOUNT_SUSPENDED` | Account suspended by admin | User |
+| `ACCOUNT_ACTIVATED` | Account reactivated by admin | User |
+
+---
+
+### 6.1 List Notifications
+
+Get user's notifications (paginated).
+
+**Endpoint:** `GET /notifications`  
+**Auth Required:** JWT
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Validation |
+|-----------|------|----------|---------|------------|
+| `page` | number | No | 1 | Min 1 |
+| `limit` | number | No | 20 | Min 1, Max 50 |
+| `type` | string | No | - | Valid notification type |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Notifications fetched successfully",
+  "data": [
+    {
+      "id": "1",
+      "type": "BOOKING_REQUEST_CREATED",
+      "title": "New Booking Request",
+      "body": "John Doe requested your Swift Dzire",
+      "data": {
+        "type": "BOOKING_REQUEST_CREATED",
+        "request_id": "5",
+        "car_id": "2",
+        "click_action": "OPEN_RECEIVED_REQUESTS"
+      },
+      "is_read": false,
+      "created_at": "2026-01-15T10:30:00.000Z"
+    },
+    {
+      "id": "2",
+      "type": "KYC_APPROVED",
+      "title": "KYC Approved! ✅",
+      "body": "Your KYC has been verified. You can now use all features.",
+      "data": {
+        "type": "KYC_APPROVED",
+        "click_action": "OPEN_DASHBOARD"
+      },
+      "is_read": true,
+      "created_at": "2026-01-14T09:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 20,
+    "total": 50,
+    "total_pages": 3,
+    "unread_count": 5
+  }
+}
+```
+
+---
+
+### 6.2 Get Unread Count
+
+Get the count of unread notifications.
+
+**Endpoint:** `GET /notifications/unread-count`  
+**Auth Required:** JWT
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Unread count fetched successfully",
+  "data": {
+    "unread_count": 5
+  }
+}
+```
+
+---
+
+### 6.3 Mark Notification as Read
+
+Mark a specific notification as read.
+
+**Endpoint:** `PUT /notifications/:id/read`  
+**Auth Required:** JWT
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Notification marked as read",
+  "data": {
+    "id": "1",
+    "is_read": true
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Message | When |
+|--------|---------|------|
+| 404 | Notification not found | Invalid notification ID or not owned by user |
+
+---
+
+### 6.4 Mark All Notifications as Read
+
+Mark all unread notifications as read.
+
+**Endpoint:** `PUT /notifications/read-all`  
+**Auth Required:** JWT
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "5 notifications marked as read",
+  "data": {
+    "updated_count": 5
+  }
+}
+```
+
+---
+
+### Notification Data Payload
+
+Each notification includes a `data` object with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Notification type (for app routing) |
+| `click_action` | string | Action to perform when notification is tapped |
+| `request_id` | string | Booking request ID (if applicable) |
+| `car_id` | string | Car ID (if applicable) |
+| `document_type` | string | Document type (for document notifications) |
+| `limit` | string | Limit value (for limit notifications) |
+
+**Click Actions:**
+
+| Action | Description |
+|--------|-------------|
+| `OPEN_RECEIVED_REQUESTS` | Open received requests screen |
+| `OPEN_SENT_REQUESTS` | Open sent requests screen |
+| `OPEN_DASHBOARD` | Open main dashboard |
+| `OPEN_KYC` | Open KYC screen |
+| `LOGOUT` | Force logout user |
+
+---
+
 ## Flow Diagrams
 
 ### Complete User Journey
@@ -1583,10 +1815,16 @@ OR
 | GET | `/booking-requests/received` | JWT + KYC | - | List received requests |
 | GET | `/booking-requests/counts` | JWT + KYC | - | Get request counts |
 | GET | `/booking-requests/pending-count` | JWT + KYC | DRIVER | Get pending count (legacy) |
+| GET | `/booking-requests/daily-limits` | JWT + KYC | - | Get daily limits |
 | PUT | `/booking-requests/:id/status` | JWT + KYC | - | Update status |
 | DELETE | `/booking-requests/:id` | JWT + KYC | - | Cancel request |
+| **Notification** |
+| GET | `/notifications` | JWT | - | List notifications |
+| GET | `/notifications/unread-count` | JWT | - | Get unread count |
+| PUT | `/notifications/read-all` | JWT | - | Mark all as read |
+| PUT | `/notifications/:id/read` | JWT | - | Mark as read |
 
-**Total: 18 User Endpoints**
+**Total: 23 User Endpoints**
 
 **Auth Legend:**
 - **Firebase** = Firebase ID token (only for login)
