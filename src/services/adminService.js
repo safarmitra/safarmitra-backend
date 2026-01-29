@@ -576,22 +576,31 @@ const deleteCar = async (carId) => {
   }
 
   // Delete images from S3
-  const deletePromises = [];
-
-  if (car.rc_front_url) {
-    deletePromises.push(uploadService.deleteFile(car.rc_front_url));
-  }
-  if (car.rc_back_url) {
-    deletePromises.push(uploadService.deleteFile(car.rc_back_url));
-  }
-
-  for (const image of car.images) {
-    if (image.image_url) {
-      deletePromises.push(uploadService.deleteFile(image.image_url));
+  try {
+    if (car.rc_front_url) {
+      const rcFrontKey = uploadService.getKeyFromUrl(car.rc_front_url);
+      if (rcFrontKey) {
+        await uploadService.deleteFromS3(rcFrontKey);
+      }
     }
-  }
+    if (car.rc_back_url) {
+      const rcBackKey = uploadService.getKeyFromUrl(car.rc_back_url);
+      if (rcBackKey) {
+        await uploadService.deleteFromS3(rcBackKey);
+      }
+    }
 
-  await Promise.all(deletePromises);
+    for (const image of car.images) {
+      if (image.image_url) {
+        const imageKey = uploadService.getKeyFromUrl(image.image_url);
+        if (imageKey) {
+          await uploadService.deleteFromS3(imageKey);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting files from S3:', error.message);
+  }
 
   // Delete car (cascade deletes images)
   await car.destroy();
