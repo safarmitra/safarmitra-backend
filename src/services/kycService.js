@@ -52,7 +52,9 @@ const getKycStatus = async (onboardingToken) => {
     kyc_reject_reason: user.kyc_reject_reason,
     personal_info: {
       full_name: user.full_name,
-      address: user.address,
+      dob: user.dob,
+      city: user.city,
+      area: user.area,
       agency_name: user.agency_name,
       profile_image_url: user.profile_image_url,
     },
@@ -80,7 +82,7 @@ const getKycStatus = async (onboardingToken) => {
  * Logic:
  * 1. Find user by onboarding token
  * 2. Check user has selected a role
- * 3. Update personal info if provided (full_name, address, agency_name)
+ * 3. Update personal info if provided (full_name, dob, city, area, agency_name)
  * 4. Upload profile image if provided
  * 5. Process each document:
  *    a. Hash document number
@@ -108,7 +110,9 @@ const submitKyc = async (onboardingToken, data, files) => {
 
   // Step 3: Update personal info if provided
   if (data.full_name) updateData.full_name = data.full_name;
-  if (data.address) updateData.address = data.address;
+  if (data.dob) updateData.dob = data.dob;
+  if (data.city) updateData.city = data.city;
+  if (data.area !== undefined) updateData.area = data.area;
   if (data.agency_name !== undefined) updateData.agency_name = data.agency_name;
 
   // Step 4: Upload profile image if provided

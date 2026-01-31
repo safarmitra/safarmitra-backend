@@ -32,7 +32,6 @@ const UserIdentity = require('./UserIdentity')(sequelize);
 const Car = require('./Car')(sequelize);
 const CarImage = require('./CarImage')(sequelize);
 const BookingRequest = require('./BookingRequest')(sequelize);
-const Location = require('./Location')(sequelize);
 const Notification = require('./Notification')(sequelize);
 
 // Define associations
@@ -75,6 +74,5 @@ module.exports = {
   Car,
   CarImage,
   BookingRequest,
-  Location,
   Notification,
 };

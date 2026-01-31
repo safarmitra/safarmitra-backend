@@ -933,7 +933,7 @@ All Car APIs require **JWT token** (KYC must be APPROVED).
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
-| `car_number` | string | Yes | Max 20 chars, unique |
+| `car_number` | string | Yes | Exactly 10 chars, unique. Format: `GJ01AB1234` or `22BH1234AB` (Bharat Series) |
 | `car_name` | string | Yes | Max 100 chars |
 | `city` | string | Yes | Max 100 chars (from cities.json) |
 | `area` | string | No | Max 100 chars (from city areas json) |

@@ -1,11 +1,50 @@
 const Joi = require('joi');
 
+/**
+ * Indian Vehicle Registration Number Validation
+ * 
+ * Standard Format: [STATE][DISTRICT][SERIES][NUMBER]
+ * Examples: GJ01AB1234, MH12DE5678, DL4CAF1234
+ * 
+ * Bharat Series Format: [YEAR]BH[NUMBER][SERIES]
+ * Examples: 22BH1234AB, 23BH5678CD
+ * 
+ * Both formats should be exactly 10 characters (after normalization)
+ */
+const vehicleNumberValidation = (value, helpers) => {
+  // Convert to uppercase and remove any spaces
+  const normalized = value.toUpperCase().replace(/\s/g, '');
+  
+  // Check length - must be exactly 10 characters
+  if (normalized.length !== 10) {
+    return helpers.error('car_number.length');
+  }
+  
+  // Standard Indian format: 2 letters + 2 digits + 2 letters + 4 digits
+  // Example: GJ01AB1234
+  const standardPattern = /^[A-Z]{2}[0-9]{2}[A-Z]{2}[0-9]{4}$/;
+  
+  // Bharat Series format: 2 digits + BH + 4 digits + 2 letters
+  // Example: 22BH1234AB
+  const bharatPattern = /^[0-9]{2}BH[0-9]{4}[A-Z]{2}$/;
+  
+  if (!standardPattern.test(normalized) && !bharatPattern.test(normalized)) {
+    return helpers.error('car_number.format');
+  }
+  
+  return normalized; // Return normalized (uppercase) value
+};
+
 const createCarSchema = Joi.object({
-  car_number: Joi.string().max(20).required().messages({
-    'string.empty': 'Car registration number is required',
-    'string.max': 'Car registration number must be less than 20 characters',
-    'any.required': 'Car registration number is required',
-  }),
+  car_number: Joi.string()
+    .required()
+    .custom(vehicleNumberValidation)
+    .messages({
+      'string.empty': 'Vehicle registration number is required',
+      'any.required': 'Vehicle registration number is required',
+      'car_number.length': 'Vehicle registration number must be exactly 10 characters',
+      'car_number.format': 'Invalid vehicle number format. Use format like GJ01AB1234 or 22BH1234AB',
+    }),
   car_name: Joi.string().max(100).required().messages({
     'string.empty': 'Car name is required',
     'string.max': 'Car name must be less than 100 characters',

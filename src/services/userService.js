@@ -62,7 +62,7 @@ const updateProfile = async (userId, data, profileImage = null) => {
   }
 
   // Build update data from allowed fields
-  const allowedFields = ['full_name', 'address', 'agency_name', 'dob'];
+  const allowedFields = ['full_name', 'dob', 'city', 'area', 'agency_name'];
   const updateData = {};
 
   allowedFields.forEach((field) => {
@@ -131,10 +131,11 @@ const formatUserProfile = (user) => {
     id: user.id,
     phone_number: user.phone_number,
     full_name: user.full_name,
-    address: user.address,
+    dob: user.dob,
+    city: user.city,
+    area: user.area,
     agency_name: user.agency_name,
     profile_image_url: user.profile_image_url,
-    dob: user.dob,
     role: user.role?.code || null,
     kyc_status: user.kyc_status,
     is_active: user.is_active,

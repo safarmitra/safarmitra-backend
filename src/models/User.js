@@ -35,6 +35,15 @@ module.exports = (sequelize) => {
       full_name: {
         type: DataTypes.STRING(100),
       },
+      dob: {
+        type: DataTypes.STRING(15),
+      },
+      city: {
+        type: DataTypes.STRING(100),
+      },
+      area: {
+        type: DataTypes.STRING(100),
+      },
       address: {
         type: DataTypes.TEXT,
       },
@@ -43,9 +52,6 @@ module.exports = (sequelize) => {
       },
       profile_image_url: {
         type: DataTypes.TEXT,
-      },
-      dob: {
-        type: DataTypes.STRING(15),
       },
       fcm_token: {
         type: DataTypes.TEXT,
