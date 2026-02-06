@@ -1,8 +1,8 @@
 # Safar Mitra - API Documentation
 
-**Version:** 2.2.0  
+**Version:** 2.3.0  
 **Base URL:** `http://localhost:3000/api/v1`  
-**Last Updated:** January 2026
+**Last Updated:** January 2025
 
 ---
 
@@ -543,6 +543,8 @@ List verified drivers for operators to invite.
 | Parameter | Type | Required | Default | Validation |
 |-----------|------|----------|---------|------------|
 | `search` | string | No | - | Max 100 chars, search by name/phone |
+| `city` | string | No | - | Max 100 chars, filter by city (case-insensitive) |
+| `area` | string | No | - | Max 100 chars, filter by area (case-insensitive) |
 | `page` | number | No | 1 | Min 1 |
 | `limit` | number | No | 10 | Min 1, Max 50 |
 
@@ -552,9 +554,11 @@ List verified drivers for operators to invite.
    - role_id = DRIVER
    - kyc_status = APPROVED
    - is_active = true
-3. Apply search filter (name or phone)
-4. Apply pagination
-5. Return list with meta
+3. Apply city filter (case-insensitive exact match)
+4. Apply area filter (case-insensitive exact match)
+5. Apply search filter (name or phone)
+6. Apply pagination
+7. Return list with meta
 
 **Success Response (200):**
 ```json
@@ -567,6 +571,8 @@ List verified drivers for operators to invite.
       "full_name": "Driver Name",
       "phone_number": "+919876543210",
       "profile_image_url": "http://...",
+      "city": "Ahmedabad",
+      "area": "Bodakdev",
       "kyc_verified": true
     }
   ],
@@ -1126,6 +1132,80 @@ All Booking Request APIs require **JWT token** (KYC must be APPROVED).
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Booking Request Status Values
+
+| Status | Description |
+|--------|-------------|
+| `PENDING` | Waiting for response (expires after 3 days) |
+| `ACCEPTED` | Request accepted - phone numbers visible |
+| `REJECTED` | Request rejected |
+| `EXPIRED` | Auto-expired after 3 days or car deactivated |
+
+### Booking Request Expiry (3 Days)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              BOOKING REQUEST EXPIRY FLOW                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. Request Created                                         │
+│     └── expires_at = created_at + 3 days                    │
+│                                                             │
+│  2. On API Call (Lazy Expiry)                               │
+│     └── Check if expires_at < NOW()                         │
+│     └── If expired: Update status = 'EXPIRED'               │
+│     └── Send notification to initiator                      │
+│                                                             │
+│  3. Expired requests visible in history with EXPIRED status │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Car Auto-Deactivation (7 Days Inactivity)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              CAR AUTO-DEACTIVATION FLOW                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Activity Tracking:                                         │
+│  └── last_active_at updated ONLY on car update              │
+│                                                             │
+│  On Driver Listing Cars:                                    │
+│  └── Check if car.last_active_at < 7 days ago               │
+│  └── If inactive: Auto-deactivate car                       │
+│  └── Expire all pending requests for this car               │
+│  └── Notify operator                                        │
+│                                                             │
+│  Operator Reactivation:                                     │
+│  └── Edit car → set is_active = true                        │
+│  └── last_active_at automatically reset to NOW()            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Phone Number Visibility
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              PHONE NUMBER VISIBILITY                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Status: PENDING / REJECTED / EXPIRED                       │
+│  ├── driver.phone_number = null (HIDDEN)                    │
+│  └── operator.phone_number = null (HIDDEN)                  │
+│                                                             │
+│  Status: ACCEPTED                                           │
+│  ├── driver.phone_number = "+919876543210" (VISIBLE)        │
+│  └── operator.phone_number = "+919876543211" (VISIBLE)      │
+│                                                             │
+│  Push Notification (on ACCEPTED):                           │
+│  ├── To Initiator: "Request accepted! Contact: {phone}"     │
+│  └── To Acceptor: "You accepted. Contact: {phone}"          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### 5.1 Create Booking Request (Driver)
 
 **Endpoint:** `POST /booking-requests`  
@@ -1551,25 +1631,42 @@ Get the daily request/invitation limits for the current user.
 
 All Notification APIs require **JWT token** (authentication required).
 
+### Notification Retention
+
+Notifications are retained for **7 days** only. Older notifications are automatically filtered out when fetching and periodically cleaned up from the database.
+
 ### Notification Types
 
-| Type | Description | Recipient |
-|------|-------------|-----------|
-| `BOOKING_REQUEST_CREATED` | Driver requested a car | Operator |
-| `BOOKING_INVITATION_CREATED` | Operator invited driver | Driver |
-| `BOOKING_REQUEST_ACCEPTED` | Operator accepted request | Driver |
-| `BOOKING_REQUEST_REJECTED` | Operator rejected request | Driver |
-| `BOOKING_INVITATION_ACCEPTED` | Driver accepted invitation | Operator |
-| `BOOKING_INVITATION_REJECTED` | Driver rejected invitation | Operator |
-| `BOOKING_REQUEST_CANCELLED` | Driver cancelled request | Operator |
-| `BOOKING_INVITATION_CANCELLED` | Operator cancelled invitation | Driver |
-| `DAILY_LIMIT_REACHED` | Daily request/invitation limit reached | User |
-| `KYC_APPROVED` | KYC approved by admin | User |
-| `KYC_REJECTED` | KYC rejected by admin | User |
-| `DOCUMENT_APPROVED` | Document approved by admin | User |
-| `DOCUMENT_REJECTED` | Document rejected by admin | User |
-| `ACCOUNT_SUSPENDED` | Account suspended by admin | User |
-| `ACCOUNT_ACTIVATED` | Account reactivated by admin | User |
+| Type | Description | Recipient | Phone Included |
+|------|-------------|-----------|----------------|
+| **Booking Events** |
+| `BOOKING_REQUEST_CREATED` | Driver requested a car | Operator | No |
+| `BOOKING_INVITATION_CREATED` | Operator invited driver | Driver | No |
+| `BOOKING_REQUEST_ACCEPTED` | Operator accepted request | Driver | ✅ Operator's phone |
+| `BOOKING_REQUEST_ACCEPTED_CONFIRMATION` | Operator accepted request | Operator | ✅ Driver's phone |
+| `BOOKING_REQUEST_REJECTED` | Operator rejected request | Driver | No |
+| `BOOKING_INVITATION_ACCEPTED` | Driver accepted invitation | Operator | ✅ Driver's phone |
+| `BOOKING_INVITATION_ACCEPTED_CONFIRMATION` | Driver accepted invitation | Driver | ✅ Operator's phone |
+| `BOOKING_INVITATION_REJECTED` | Driver rejected invitation | Operator | No |
+| `BOOKING_REQUEST_CANCELLED` | Driver cancelled request | Operator | No |
+| `BOOKING_INVITATION_CANCELLED` | Operator cancelled invitation | Driver | No |
+| **Expiry Events** |
+| `BOOKING_REQUEST_EXPIRED` | Request expired (3 days) | Driver | No |
+| `BOOKING_INVITATION_EXPIRED` | Invitation expired (3 days) | Operator | No |
+| `REQUEST_EXPIRED_CAR_UNAVAILABLE` | Car deactivated | Initiator | No |
+| `CAR_AUTO_DEACTIVATED` | Car inactive 7 days | Operator | No |
+| **Limit Events** |
+| `DAILY_LIMIT_REACHED` | Daily limit reached | User | No |
+| **KYC Events** |
+| `KYC_APPROVED` | KYC approved by admin | User | No |
+| `KYC_REJECTED` | KYC rejected by admin | User | No |
+| `DOCUMENT_APPROVED` | Document approved by admin | User | No |
+| `DOCUMENT_REJECTED` | Document rejected by admin | User | No |
+| **Account Events** |
+| `ACCOUNT_SUSPENDED` | Account suspended by admin | User | No |
+| `ACCOUNT_ACTIVATED` | Account reactivated by admin | User | No |
+
+**Total: 21 notification types**
 
 ---
 
@@ -1721,6 +1818,7 @@ Each notification includes a `data` object with:
 | `OPEN_SENT_REQUESTS` | Open sent requests screen |
 | `OPEN_DASHBOARD` | Open main dashboard |
 | `OPEN_KYC` | Open KYC screen |
+| `OPEN_MY_CARS` | Open my cars screen (for operators) |
 | `LOGOUT` | Force logout user |
 
 ---

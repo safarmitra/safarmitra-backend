@@ -191,6 +191,31 @@ npm run db:migrate # Run database migrations
 npm run db:seed    # Run database seeders
 ```
 
+### Database Reset Script
+
+Reset the database (truncate all tables and re-seed essential data):
+
+```bash
+# Development (with confirmation prompt)
+node scripts/reset-database.js
+
+# Production (requires --force flag + double confirmation)
+node scripts/reset-database.js --force
+```
+
+**What it does:**
+1. Truncates all tables (deletes all data)
+2. Re-seeds roles (DRIVER, OPERATOR, ADMIN)
+3. Re-seeds admin user (admin@safarmitra.com / Admin@123)
+
+**Safety features:**
+- Single confirmation in development
+- Double confirmation in production
+- Requires `--force` flag in production
+- Preserves migration history (SequelizeMeta table)
+
+⚠️ **WARNING:** This will DELETE ALL DATA from the database!
+
 ---
 
 ## 🛠️ Tech Stack

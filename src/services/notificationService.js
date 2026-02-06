@@ -2,13 +2,30 @@
 
 const { admin } = require('../config/firebase');
 const { User, Notification } = require('../models');
+const { Op } = require('sequelize');
 const templates = require('../utils/notificationTemplates');
+const { NOTIFICATION_RETENTION_DAYS } = require('../config/limits');
 
 /**
  * Notification Service
  * Handles sending push notifications via Firebase Cloud Messaging (FCM)
  * and storing notification history in the database
+ * 
+ * Features:
+ * - 7-day notification retention (older notifications are filtered/cleaned)
+ * - Phone numbers included in ACCEPTED notifications
+ * - Both parties notified on acceptance
  */
+
+/**
+ * Get the retention threshold date (7 days ago)
+ * @returns {Date}
+ */
+const getRetentionThreshold = () => {
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - NOTIFICATION_RETENTION_DAYS);
+  return threshold;
+};
 
 /**
  * Save notification to database
@@ -157,7 +174,7 @@ const sendToUsers = async (userIds, template) => {
 };
 
 /**
- * Get user's notifications (paginated)
+ * Get user's notifications (paginated, last 7 days only)
  * @param {number} userId - User ID
  * @param {Object} options - Query options
  * @returns {Promise<Object>} Paginated notifications
@@ -165,8 +182,13 @@ const sendToUsers = async (userIds, template) => {
 const getUserNotifications = async (userId, options = {}) => {
   const { page = 1, limit = 20, type = null } = options;
   const offset = (page - 1) * limit;
+  const retentionThreshold = getRetentionThreshold();
 
-  const where = { user_id: userId };
+  const where = {
+    user_id: userId,
+    created_at: { [Op.gte]: retentionThreshold }, // Only last 7 days
+  };
+
   if (type) {
     where.type = type;
   }
@@ -178,10 +200,19 @@ const getUserNotifications = async (userId, options = {}) => {
     offset,
   });
 
-  // Get unread count
+  // Get unread count (only last 7 days)
   const unreadCount = await Notification.count({
-    where: { user_id: userId, is_read: false },
+    where: {
+      user_id: userId,
+      is_read: false,
+      created_at: { [Op.gte]: retentionThreshold },
+    },
   });
+
+  // Async cleanup of old notifications (non-blocking)
+  cleanupOldNotifications(userId).catch((err) =>
+    console.error('Notification cleanup error:', err.message)
+  );
 
   return {
     data: rows.map((n) => ({
@@ -204,13 +235,47 @@ const getUserNotifications = async (userId, options = {}) => {
 };
 
 /**
- * Get unread notification count for a user
+ * Cleanup old notifications (older than 7 days)
+ * Only runs if user has more than 50 old notifications
+ * @param {number} userId - User ID
+ */
+const cleanupOldNotifications = async (userId) => {
+  const retentionThreshold = getRetentionThreshold();
+
+  // Count old notifications
+  const oldCount = await Notification.count({
+    where: {
+      user_id: userId,
+      created_at: { [Op.lt]: retentionThreshold },
+    },
+  });
+
+  // Only cleanup if more than 50 old notifications
+  if (oldCount > 50) {
+    await Notification.destroy({
+      where: {
+        user_id: userId,
+        created_at: { [Op.lt]: retentionThreshold },
+      },
+    });
+    console.log(`Cleaned up ${oldCount} old notifications for user ${userId}`);
+  }
+};
+
+/**
+ * Get unread notification count for a user (last 7 days only)
  * @param {number} userId - User ID
  * @returns {Promise<number>}
  */
 const getUnreadCount = async (userId) => {
+  const retentionThreshold = getRetentionThreshold();
+
   return Notification.count({
-    where: { user_id: userId, is_read: false },
+    where: {
+      user_id: userId,
+      is_read: false,
+      created_at: { [Op.gte]: retentionThreshold },
+    },
   });
 };
 
@@ -239,14 +304,22 @@ const markAsRead = async (notificationId, userId) => {
 };
 
 /**
- * Mark all notifications as read for a user
+ * Mark all notifications as read for a user (last 7 days only)
  * @param {number} userId - User ID
  * @returns {Promise<number>} Number of notifications marked as read
  */
 const markAllAsRead = async (userId) => {
+  const retentionThreshold = getRetentionThreshold();
+
   const [updatedCount] = await Notification.update(
     { is_read: true },
-    { where: { user_id: userId, is_read: false } }
+    {
+      where: {
+        user_id: userId,
+        is_read: false,
+        created_at: { [Op.gte]: retentionThreshold },
+      },
+    }
   );
   return updatedCount;
 };
@@ -270,11 +343,19 @@ const notifyBookingInvitationCreated = async (driverId, operatorName, carName, r
 };
 
 /**
- * Notify driver when operator accepts their request
+ * Notify driver when operator accepts their request (with operator's phone)
  */
-const notifyBookingRequestAccepted = async (driverId, operatorName, carName, requestId, carId) => {
-  const template = templates.bookingRequestAccepted(operatorName, carName, requestId, carId);
+const notifyBookingRequestAccepted = async (driverId, operatorName, carName, requestId, carId, operatorPhone) => {
+  const template = templates.bookingRequestAccepted(operatorName, carName, requestId, carId, operatorPhone);
   return sendToUser(driverId, template);
+};
+
+/**
+ * Notify operator when they accept a request (confirmation with driver's phone)
+ */
+const notifyBookingRequestAcceptedConfirmation = async (operatorId, driverName, carName, requestId, carId, driverPhone) => {
+  const template = templates.bookingRequestAcceptedConfirmation(driverName, carName, requestId, carId, driverPhone);
+  return sendToUser(operatorId, template);
 };
 
 /**
@@ -293,11 +374,19 @@ const notifyBookingRequestRejected = async (
 };
 
 /**
- * Notify operator when driver accepts their invitation
+ * Notify operator when driver accepts their invitation (with driver's phone)
  */
-const notifyBookingInvitationAccepted = async (operatorId, driverName, carName, requestId, carId) => {
-  const template = templates.bookingInvitationAccepted(driverName, carName, requestId, carId);
+const notifyBookingInvitationAccepted = async (operatorId, driverName, carName, requestId, carId, driverPhone) => {
+  const template = templates.bookingInvitationAccepted(driverName, carName, requestId, carId, driverPhone);
   return sendToUser(operatorId, template);
+};
+
+/**
+ * Notify driver when they accept an invitation (confirmation with operator's phone)
+ */
+const notifyBookingInvitationAcceptedConfirmation = async (driverId, operatorName, carName, requestId, carId, operatorPhone) => {
+  const template = templates.bookingInvitationAcceptedConfirmation(operatorName, carName, requestId, carId, operatorPhone);
+  return sendToUser(driverId, template);
 };
 
 /**
@@ -329,6 +418,40 @@ const notifyBookingRequestCancelled = async (operatorId, driverName, carName, ca
 const notifyBookingInvitationCancelled = async (driverId, operatorName, carName, carId) => {
   const template = templates.bookingInvitationCancelled(operatorName, carName, carId);
   return sendToUser(driverId, template);
+};
+
+// ==================== Expiry Notifications ====================
+
+/**
+ * Notify driver when their booking request expires
+ */
+const notifyBookingRequestExpired = async (driverId, carName, carId) => {
+  const template = templates.bookingRequestExpired(carName, carId);
+  return sendToUser(driverId, template);
+};
+
+/**
+ * Notify operator when their invitation expires
+ */
+const notifyBookingInvitationExpired = async (operatorId, driverName, carName, carId) => {
+  const template = templates.bookingInvitationExpired(driverName, carName, carId);
+  return sendToUser(operatorId, template);
+};
+
+/**
+ * Notify initiator when request expires because car was deactivated
+ */
+const notifyRequestExpiredCarUnavailable = async (userId, carName, carId) => {
+  const template = templates.requestExpiredCarUnavailable(carName, carId);
+  return sendToUser(userId, template);
+};
+
+/**
+ * Notify operator when their car is auto-deactivated
+ */
+const notifyCarAutoDeactivated = async (operatorId, carName, carId) => {
+  const template = templates.carAutoDeactivated(carName, carId);
+  return sendToUser(operatorId, template);
 };
 
 // ==================== Limit Notifications ====================
@@ -404,16 +527,25 @@ module.exports = {
   getUnreadCount,
   markAsRead,
   markAllAsRead,
+  cleanupOldNotifications,
 
   // Booking request notifications
   notifyBookingRequestCreated,
   notifyBookingInvitationCreated,
   notifyBookingRequestAccepted,
+  notifyBookingRequestAcceptedConfirmation,
   notifyBookingRequestRejected,
   notifyBookingInvitationAccepted,
+  notifyBookingInvitationAcceptedConfirmation,
   notifyBookingInvitationRejected,
   notifyBookingRequestCancelled,
   notifyBookingInvitationCancelled,
+
+  // Expiry notifications
+  notifyBookingRequestExpired,
+  notifyBookingInvitationExpired,
+  notifyRequestExpiredCarUnavailable,
+  notifyCarAutoDeactivated,
 
   // Limit notifications
   notifyDailyLimitReached,

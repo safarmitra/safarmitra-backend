@@ -3,6 +3,7 @@ require('dotenv').config();
 const app = require('./src/app');
 const { sequelize } = require('./src/models');
 const { initializeFirebase } = require('./src/config/firebase');
+const { initializeServices } = require('./src/services/serviceSetup');
 
 const PORT = process.env.PORT || 3000;
 const env = process.env.NODE_ENV || 'development';
@@ -12,6 +13,9 @@ const startServer = async () => {
   try {
     // Initialize Firebase
     initializeFirebase();
+
+    // Initialize service dependencies (resolves circular dependencies)
+    initializeServices();
 
     // Test database connection
     await sequelize.authenticate();

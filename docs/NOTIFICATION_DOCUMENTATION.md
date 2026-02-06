@@ -1,42 +1,38 @@
 # Safar Mitra - Push Notification Documentation
 
-**Version:** 1.0.0  
-**Last Updated:** January 2026
+**Version:** 2.1.0  
+**Last Updated:** January 2025
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [Overview](#overview)
 2. [Setup](#setup)
 3. [Notification Events](#notification-events)
 4. [Notification Payload Structure](#notification-payload-structure)
 5. [Click Actions](#click-actions)
-6. [Flutter Integration](#flutter-integration)
-7. [Testing](#testing)
+6. [Notification History](#notification-history)
+7. [Flutter Integration](#flutter-integration)
+8. [Testing](#testing)
 
 ---
 
 ## Overview
 
-Safar Mitra uses **Firebase Cloud Messaging (FCM)** to send push notifications to users. Notifications are triggered by various events in the application.
+Safar Mitra uses **Firebase Cloud Messaging (FCM)** to send push notifications to users.
 
 ### Key Features
 
 - Real-time notifications for booking requests
+- Phone numbers included in ACCEPTED notifications
+- Both parties notified on acceptance
+- Expiry notifications for requests and cars
+- 7-day notification retention
+- No emojis in titles for better compatibility
 - KYC status updates
 - Account status changes
 - Supports both Android and iOS
-
-### Architecture
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Backend API   │────▶│   Firebase FCM  │────▶│   Flutter App   │
-│                 │     │                 │     │                 │
-│ notificationSvc │     │  Cloud Message  │     │  FCM Handler    │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-```
 
 ---
 
@@ -44,21 +40,14 @@ Safar Mitra uses **Firebase Cloud Messaging (FCM)** to send push notifications t
 
 ### Backend Configuration
 
-Add these environment variables:
-
 ```env
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_CLIENT_EMAIL=firebase-adminsdk@your-project.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+NOTIFICATION_RETENTION_DAYS=7
 ```
 
 ### FCM Token Storage
-
-The FCM token is stored in the `users` table:
-
-```sql
-fcm_token VARCHAR(500)
-```
 
 The token is sent during login:
 
@@ -74,346 +63,111 @@ POST /auth/login
 
 ## Notification Events
 
-### Summary Table
+### Summary Table (21 Events)
 
-| # | Event | Trigger | Recipient | Category |
-|---|-------|---------|-----------|----------|
-| 1 | `BOOKING_REQUEST_CREATED` | Driver requests car | Operator | Booking |
-| 2 | `BOOKING_INVITATION_CREATED` | Operator invites driver | Driver | Booking |
-| 3 | `BOOKING_REQUEST_ACCEPTED` | Operator accepts request | Driver | Booking |
-| 4 | `BOOKING_REQUEST_REJECTED` | Operator rejects request | Driver | Booking |
-| 5 | `BOOKING_INVITATION_ACCEPTED` | Driver accepts invitation | Operator | Booking |
-| 6 | `BOOKING_INVITATION_REJECTED` | Driver rejects invitation | Operator | Booking |
-| 7 | `BOOKING_REQUEST_CANCELLED` | Driver cancels request | Operator | Booking |
-| 8 | `BOOKING_INVITATION_CANCELLED` | Operator cancels invitation | Driver | Booking |
-| 9 | `KYC_APPROVED` | Admin approves KYC | User | KYC |
-| 10 | `KYC_REJECTED` | Admin rejects KYC | User | KYC |
-| 11 | `DOCUMENT_APPROVED` | Admin approves document | User | KYC |
-| 12 | `DOCUMENT_REJECTED` | Admin rejects document | User | KYC |
-| 13 | `ACCOUNT_SUSPENDED` | Admin suspends user | User | Account |
-| 14 | `ACCOUNT_ACTIVATED` | Admin activates user | User | Account |
-
-**Total: 14 notification events**
-
----
-
-## Notification Details
-
-### 1. Booking Request Notifications
-
-#### BOOKING_REQUEST_CREATED
-
-**Trigger:** Driver creates a booking request for a car  
-**Recipient:** Operator (car owner)
-
-```json
-{
-  "notification": {
-    "title": "New Booking Request",
-    "body": "John Doe requested your Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_REQUEST_CREATED",
-    "request_id": "123",
-    "car_id": "1",
-    "click_action": "OPEN_RECEIVED_REQUESTS"
-  }
-}
-```
+| Event | Trigger | Recipient |
+|-------|---------|-----------|
+| `BOOKING_REQUEST_CREATED` | Driver requests car | Operator |
+| `BOOKING_INVITATION_CREATED` | Operator invites driver | Driver |
+| `BOOKING_REQUEST_ACCEPTED` | Operator accepts request | Driver |
+| `BOOKING_REQUEST_ACCEPTED_CONFIRMATION` | Operator accepts request | Operator |
+| `BOOKING_REQUEST_REJECTED` | Operator rejects request | Driver |
+| `BOOKING_INVITATION_ACCEPTED` | Driver accepts invitation | Operator |
+| `BOOKING_INVITATION_ACCEPTED_CONFIRMATION` | Driver accepts invitation | Driver |
+| `BOOKING_INVITATION_REJECTED` | Driver rejects invitation | Operator |
+| `BOOKING_REQUEST_CANCELLED` | Driver cancels request | Operator |
+| `BOOKING_INVITATION_CANCELLED` | Operator cancels invitation | Driver |
+| `BOOKING_REQUEST_EXPIRED` | Request expires (3 days) | Driver |
+| `BOOKING_INVITATION_EXPIRED` | Invitation expires (3 days) | Operator |
+| `REQUEST_EXPIRED_CAR_UNAVAILABLE` | Car deactivated | Initiator |
+| `CAR_AUTO_DEACTIVATED` | Car inactive 7 days | Operator |
+| `DAILY_LIMIT_REACHED` | Daily limit reached | User |
+| `KYC_APPROVED` | Admin approves KYC | User |
+| `KYC_REJECTED` | Admin rejects KYC | User |
+| `DOCUMENT_APPROVED` | Admin approves document | User |
+| `DOCUMENT_REJECTED` | Admin rejects document | User |
+| `ACCOUNT_SUSPENDED` | Admin suspends user | User |
+| `ACCOUNT_ACTIVATED` | Admin activates user | User |
 
 ---
 
-#### BOOKING_INVITATION_CREATED
+## Notification Examples
 
-**Trigger:** Operator invites a driver for their car  
-**Recipient:** Driver
+### Booking Notifications
 
+**BOOKING_REQUEST_CREATED:**
 ```json
 {
-  "notification": {
-    "title": "New Car Invitation",
-    "body": "XYZ Rentals invited you for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_INVITATION_CREATED",
-    "request_id": "123",
-    "car_id": "1",
-    "click_action": "OPEN_RECEIVED_REQUESTS"
-  }
+  "title": "New Booking Request",
+  "body": "John Doe requested your Swift Dzire"
 }
 ```
 
----
-
-#### BOOKING_REQUEST_ACCEPTED
-
-**Trigger:** Operator accepts driver's booking request  
-**Recipient:** Driver
-
+**BOOKING_REQUEST_ACCEPTED:**
 ```json
 {
-  "notification": {
-    "title": "Request Accepted! 🎉",
-    "body": "XYZ Rentals accepted your request for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_REQUEST_ACCEPTED",
-    "request_id": "123",
-    "car_id": "1",
-    "click_action": "OPEN_SENT_REQUESTS"
-  }
+  "title": "Request Accepted!",
+  "body": "XYZ Rentals accepted your request for Swift Dzire. Contact: +919876543210"
 }
 ```
 
----
-
-#### BOOKING_REQUEST_REJECTED
-
-**Trigger:** Operator rejects driver's booking request  
-**Recipient:** Driver
-
+**BOOKING_REQUEST_REJECTED:**
 ```json
 {
-  "notification": {
-    "title": "Request Rejected",
-    "body": "XYZ Rentals rejected your request for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_REQUEST_REJECTED",
-    "request_id": "123",
-    "car_id": "1",
-    "click_action": "OPEN_SENT_REQUESTS"
-  }
+  "title": "Request Rejected",
+  "body": "XYZ Rentals rejected your request for Swift Dzire"
 }
 ```
 
-With reason:
+### Expiry Notifications
+
+**BOOKING_REQUEST_EXPIRED:**
 ```json
 {
-  "notification": {
-    "title": "Request Rejected",
-    "body": "XYZ Rentals rejected your request for Swift Dzire. Reason: Car already booked"
-  }
+  "title": "Request Expired",
+  "body": "Your request for Swift Dzire has expired"
 }
 ```
 
----
-
-#### BOOKING_INVITATION_ACCEPTED
-
-**Trigger:** Driver accepts operator's invitation  
-**Recipient:** Operator
-
+**CAR_AUTO_DEACTIVATED:**
 ```json
 {
-  "notification": {
-    "title": "Invitation Accepted! 🎉",
-    "body": "John Doe accepted your invitation for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_INVITATION_ACCEPTED",
-    "request_id": "123",
-    "car_id": "1",
-    "click_action": "OPEN_SENT_REQUESTS"
-  }
+  "title": "Car Deactivated",
+  "body": "Your Swift Dzire was deactivated due to 7 days of inactivity. Edit to reactivate."
 }
 ```
 
----
+### KYC Notifications
 
-#### BOOKING_INVITATION_REJECTED
-
-**Trigger:** Driver rejects operator's invitation  
-**Recipient:** Operator
-
+**KYC_APPROVED:**
 ```json
 {
-  "notification": {
-    "title": "Invitation Rejected",
-    "body": "John Doe rejected your invitation for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_INVITATION_REJECTED",
-    "request_id": "123",
-    "car_id": "1",
-    "click_action": "OPEN_SENT_REQUESTS"
-  }
+  "title": "KYC Approved",
+  "body": "Your KYC has been verified. You can now use all features."
 }
 ```
 
----
-
-#### BOOKING_REQUEST_CANCELLED
-
-**Trigger:** Driver cancels their pending request  
-**Recipient:** Operator
-
+**KYC_REJECTED:**
 ```json
 {
-  "notification": {
-    "title": "Request Cancelled",
-    "body": "John Doe cancelled their request for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_REQUEST_CANCELLED",
-    "car_id": "1",
-    "click_action": "OPEN_RECEIVED_REQUESTS"
-  }
+  "title": "KYC Rejected",
+  "body": "Your KYC was rejected. Reason: Documents are not clear"
 }
 ```
 
----
+### Account Notifications
 
-#### BOOKING_INVITATION_CANCELLED
-
-**Trigger:** Operator cancels their pending invitation  
-**Recipient:** Driver
-
+**ACCOUNT_SUSPENDED:**
 ```json
 {
-  "notification": {
-    "title": "Invitation Cancelled",
-    "body": "XYZ Rentals cancelled the invitation for Swift Dzire"
-  },
-  "data": {
-    "type": "BOOKING_INVITATION_CANCELLED",
-    "car_id": "1",
-    "click_action": "OPEN_RECEIVED_REQUESTS"
-  }
-}
-```
-
----
-
-### 2. KYC Notifications
-
-#### KYC_APPROVED
-
-**Trigger:** Admin approves user's KYC  
-**Recipient:** User
-
-```json
-{
-  "notification": {
-    "title": "KYC Approved! ✅",
-    "body": "Your KYC has been verified. You can now use all features."
-  },
-  "data": {
-    "type": "KYC_APPROVED",
-    "click_action": "OPEN_DASHBOARD"
-  }
-}
-```
-
----
-
-#### KYC_REJECTED
-
-**Trigger:** Admin rejects user's KYC  
-**Recipient:** User
-
-```json
-{
-  "notification": {
-    "title": "KYC Rejected",
-    "body": "Your KYC was rejected. Reason: Documents are not clear"
-  },
-  "data": {
-    "type": "KYC_REJECTED",
-    "click_action": "OPEN_KYC"
-  }
-}
-```
-
----
-
-#### DOCUMENT_APPROVED
-
-**Trigger:** Admin approves individual document  
-**Recipient:** User
-
-```json
-{
-  "notification": {
-    "title": "Document Approved",
-    "body": "Your Aadhaar Card has been verified."
-  },
-  "data": {
-    "type": "DOCUMENT_APPROVED",
-    "document_type": "AADHAAR",
-    "click_action": "OPEN_KYC"
-  }
-}
-```
-
----
-
-#### DOCUMENT_REJECTED
-
-**Trigger:** Admin rejects individual document  
-**Recipient:** User
-
-```json
-{
-  "notification": {
-    "title": "Document Rejected",
-    "body": "Your Driving License was rejected. Reason: Image is blurry"
-  },
-  "data": {
-    "type": "DOCUMENT_REJECTED",
-    "document_type": "DRIVING_LICENSE",
-    "click_action": "OPEN_KYC"
-  }
-}
-```
-
----
-
-### 3. Account Notifications
-
-#### ACCOUNT_SUSPENDED
-
-**Trigger:** Admin suspends user account  
-**Recipient:** User
-
-```json
-{
-  "notification": {
-    "title": "Account Suspended",
-    "body": "Your account has been suspended. Please contact support for assistance."
-  },
-  "data": {
-    "type": "ACCOUNT_SUSPENDED",
-    "click_action": "LOGOUT"
-  }
-}
-```
-
----
-
-#### ACCOUNT_ACTIVATED
-
-**Trigger:** Admin reactivates user account  
-**Recipient:** User
-
-```json
-{
-  "notification": {
-    "title": "Account Activated",
-    "body": "Your account has been reactivated. Welcome back!"
-  },
-  "data": {
-    "type": "ACCOUNT_ACTIVATED",
-    "click_action": "OPEN_DASHBOARD"
-  }
+  "title": "Account Suspended",
+  "body": "Your account has been suspended. Please contact support for assistance."
 }
 ```
 
 ---
 
 ## Notification Payload Structure
-
-### Full FCM Message Structure
 
 ```json
 {
@@ -426,245 +180,70 @@ With reason:
     "type": "NOTIFICATION_TYPE",
     "request_id": "123",
     "car_id": "1",
+    "phone_number": "+919876543210",
     "click_action": "OPEN_SCREEN"
-  },
-  "android": {
-    "priority": "high",
-    "notification": {
-      "sound": "default",
-      "channelId": "safarmitra_notifications"
-    }
-  },
-  "apns": {
-    "payload": {
-      "aps": {
-        "sound": "default",
-        "badge": 1
-      }
-    }
   }
 }
 ```
 
-### Data Payload Fields
+### Data Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | string | Notification event type |
-| `request_id` | string | Booking request ID (if applicable) |
-| `car_id` | string | Car ID (if applicable) |
-| `document_type` | string | Document type (for document notifications) |
-| `click_action` | string | Action to perform when notification is tapped |
+| Field | Description |
+|-------|-------------|
+| `type` | Notification event type |
+| `request_id` | Booking request ID |
+| `car_id` | Car ID |
+| `phone_number` | Contact phone (ACCEPTED only) |
+| `click_action` | Action when tapped |
 
 ---
 
 ## Click Actions
 
-| Action | Description | Screen to Open |
-|--------|-------------|----------------|
-| `OPEN_RECEIVED_REQUESTS` | Open received requests list | Received Requests Screen |
-| `OPEN_SENT_REQUESTS` | Open sent requests list | Sent Requests Screen |
-| `OPEN_DASHBOARD` | Open main dashboard | Dashboard/Home Screen |
-| `OPEN_KYC` | Open KYC screen | KYC Submission Screen |
-| `LOGOUT` | Log out user | Login Screen |
+| Action | Screen |
+|--------|--------|
+| `OPEN_RECEIVED_REQUESTS` | Received Requests |
+| `OPEN_SENT_REQUESTS` | Sent Requests |
+| `OPEN_DASHBOARD` | Dashboard |
+| `OPEN_KYC` | KYC Screen |
+| `OPEN_MY_CARS` | My Cars |
+| `LOGOUT` | Login Screen |
 
 ---
 
-## Flutter Integration
+## Notification History
 
-### 1. Setup FCM in Flutter
+### API Endpoints
 
-```dart
-// pubspec.yaml
-dependencies:
-  firebase_core: ^2.24.2
-  firebase_messaging: ^14.7.10
-```
-
-### 2. Initialize FCM
-
-```dart
-import 'package:firebase_messaging/firebase_messaging.dart';
-
-class NotificationService {
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-  
-  Future<void> initialize() async {
-    // Request permission
-    await _fcm.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    
-    // Get FCM token
-    String? token = await _fcm.getToken();
-    print('FCM Token: $token');
-    
-    // Listen for token refresh
-    _fcm.onTokenRefresh.listen((newToken) {
-      // Send new token to backend
-      _updateTokenOnServer(newToken);
-    });
-    
-    // Handle foreground messages
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-    
-    // Handle background messages
-    FirebaseMessaging.onBackgroundMessage(_handleBackgroundMessage);
-    
-    // Handle notification tap
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-  }
-  
-  void _handleForegroundMessage(RemoteMessage message) {
-    // Show local notification
-    _showLocalNotification(message);
-  }
-  
-  void _handleNotificationTap(RemoteMessage message) {
-    final data = message.data;
-    final clickAction = data['click_action'];
-    
-    switch (clickAction) {
-      case 'OPEN_RECEIVED_REQUESTS':
-        // Navigate to received requests
-        Navigator.pushNamed(context, '/booking-requests/received');
-        break;
-      case 'OPEN_SENT_REQUESTS':
-        // Navigate to sent requests
-        Navigator.pushNamed(context, '/booking-requests/sent');
-        break;
-      case 'OPEN_DASHBOARD':
-        // Navigate to dashboard
-        Navigator.pushNamed(context, '/dashboard');
-        break;
-      case 'OPEN_KYC':
-        // Navigate to KYC screen
-        Navigator.pushNamed(context, '/kyc');
-        break;
-      case 'LOGOUT':
-        // Log out user
-        _authService.logout();
-        Navigator.pushReplacementNamed(context, '/login');
-        break;
-    }
-  }
-}
-```
-
-### 3. Send FCM Token to Backend
-
-```dart
-Future<void> login(String firebaseToken) async {
-  final fcmToken = await FirebaseMessaging.instance.getToken();
-  
-  final response = await http.post(
-    Uri.parse('$baseUrl/auth/login'),
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({
-      'firebase_token': firebaseToken,
-      'fcm_token': fcmToken,
-    }),
-  );
-}
-```
-
-### 4. Android Notification Channel
-
-```dart
-// Create notification channel for Android
-const AndroidNotificationChannel channel = AndroidNotificationChannel(
-  'safarmitra_notifications',
-  'Safar Mitra Notifications',
-  description: 'Notifications from Safar Mitra app',
-  importance: Importance.high,
-);
-
-await flutterLocalNotificationsPlugin
-    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-    ?.createNotificationChannel(channel);
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/notifications` | List notifications (7 days) |
+| GET | `/notifications/unread-count` | Get unread count |
+| PUT | `/notifications/:id/read` | Mark as read |
+| PUT | `/notifications/read-all` | Mark all as read |
 
 ---
 
-## Testing
+## Phone Number Visibility
 
-### Test Notification via cURL
-
-```bash
-# Get a user's FCM token from database first
-# Then use Firebase Admin SDK or this test endpoint
-
-curl -X POST https://fcm.googleapis.com/fcm/send \
-  -H "Authorization: key=YOUR_SERVER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "USER_FCM_TOKEN",
-    "notification": {
-      "title": "Test Notification",
-      "body": "This is a test notification"
-    },
-    "data": {
-      "type": "BOOKING_REQUEST_CREATED",
-      "request_id": "123",
-      "car_id": "1",
-      "click_action": "OPEN_RECEIVED_REQUESTS"
-    }
-  }'
-```
-
-### Test via Backend
-
-Trigger notifications by performing actions:
-
-1. **Booking Request Created:** Create a booking request as a driver
-2. **KYC Approved:** Approve KYC via admin panel
-3. **Account Suspended:** Suspend user via admin panel
+| Notification | Recipient | Phone Included |
+|--------------|-----------|----------------|
+| `BOOKING_REQUEST_ACCEPTED` | Driver | Operator's phone |
+| `BOOKING_REQUEST_ACCEPTED_CONFIRMATION` | Operator | Driver's phone |
+| `BOOKING_INVITATION_ACCEPTED` | Operator | Driver's phone |
+| `BOOKING_INVITATION_ACCEPTED_CONFIRMATION` | Driver | Operator's phone |
 
 ---
 
-## Error Handling
+## Configuration
 
-### Invalid FCM Token
-
-When a token is invalid, the notification service logs the error:
-
-```
-Invalid FCM token, should be cleared from database
-```
-
-Consider implementing token cleanup:
-
-```javascript
-// In notificationService.js
-if (error.code === 'messaging/invalid-registration-token' ||
-    error.code === 'messaging/registration-token-not-registered') {
-  // Clear invalid token from database
-  await User.update(
-    { fcm_token: null },
-    { where: { fcm_token: fcmToken } }
-  );
-}
-```
-
-### Firebase Not Initialized
-
-If Firebase credentials are not provided, notifications are silently skipped:
-
-```
-Firebase not initialized, skipping notification
-```
-
----
-
-## Best Practices
-
-1. **Always handle notification errors gracefully** - Don't let notification failures break the main flow
-2. **Use async/await with .catch()** - Notifications are fire-and-forget
-3. **Keep notification text concise** - Mobile screens have limited space
-4. **Include relevant data** - Pass IDs for deep linking
-5. **Test on real devices** - Emulators may not receive notifications properly
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NOTIFICATION_RETENTION_DAYS` | 7 | Days to retain notifications |
+| `DRIVER_DAILY_REQUEST_LIMIT` | 5 | Daily request limit |
+| `OPERATOR_DAILY_INVITATION_LIMIT` | 5 | Daily invitation limit |
+| `BOOKING_REQUEST_EXPIRY_DAYS` | 3 | Days until request expires |
+| `CAR_INACTIVITY_DAYS` | 7 | Days until car auto-deactivates |
 
 ---
 

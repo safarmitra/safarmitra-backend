@@ -3,12 +3,26 @@ const { User, UserIdentity, Role } = require('../models');
 const uploadService = require('./uploadService');
 const authService = require('./authService');
 const { compareIds } = require('../utils/helpers');
+const { encrypt, isEncryptionConfigured } = require('../utils/encryption');
+const AppError = require('../utils/AppError');
 
 /**
- * Hash document number for security
+ * Hash document number for duplicate detection (SHA-256)
  */
 const hashDocumentNumber = (documentNumber) => {
   return crypto.createHash('sha256').update(documentNumber).digest('hex');
+};
+
+/**
+ * Encrypt document number for admin viewing (AES-256-GCM)
+ * Returns null if encryption is not configured
+ */
+const encryptDocumentNumber = (documentNumber) => {
+  if (!isEncryptionConfigured()) {
+    console.warn('DOCUMENT_ENCRYPTION_KEY not configured, document number will not be stored encrypted');
+    return null;
+  }
+  return encrypt(documentNumber);
 };
 
 /**
@@ -85,10 +99,11 @@ const getKycStatus = async (onboardingToken) => {
  * 3. Update personal info if provided (full_name, dob, city, area, agency_name)
  * 4. Upload profile image if provided
  * 5. Process each document:
- *    a. Hash document number
- *    b. Check for duplicates (same hash, different user)
- *    c. Upload front/back images to S3
- *    d. Create new or update existing document record
+ *    a. Hash document number (for duplicate detection)
+ *    b. Encrypt document number (for admin viewing)
+ *    c. Check for duplicates (same hash, different user)
+ *    d. Upload front/back images to S3
+ *    e. Create new or update existing document record
  * 6. Update user's kyc_status to 'PENDING'
  * 7. Return success with summary and onboarding status
  * 
@@ -102,7 +117,7 @@ const submitKyc = async (onboardingToken, data, files) => {
 
   // Step 2: Check user has selected a role
   if (!user.role_id) {
-    throw new Error('Please select a role before submitting KYC');
+    throw AppError.selectRoleFirst(`User ${user.id} has not selected a role`);
   }
 
   const updateData = {};
@@ -153,8 +168,11 @@ const submitKyc = async (onboardingToken, data, files) => {
       continue; // Skip if no front file (shouldn't happen due to validation)
     }
 
-    // Hash document number
+    // Hash document number (for duplicate detection)
     const documentHash = hashDocumentNumber(doc.document_number);
+    
+    // Encrypt document number (for admin viewing)
+    const documentEncrypted = encryptDocumentNumber(doc.document_number);
 
     // Check for duplicates (same hash, different user)
     const existingDoc = await UserIdentity.findOne({
@@ -162,7 +180,8 @@ const submitKyc = async (onboardingToken, data, files) => {
     });
 
     if (existingDoc && !compareIds(existingDoc.user_id, user.id)) {
-      throw new Error(`${doc.document_type} is already registered with another account`);
+      // User needs to know to use a different document
+      throw AppError.documentAlreadyRegistered(`Document ${doc.document_type} already exists for another user`);
     }
 
     // Upload front document
@@ -184,6 +203,7 @@ const submitKyc = async (onboardingToken, data, files) => {
       // Update existing document
       await userExistingDoc.update({
         document_number_hash: documentHash,
+        document_number_encrypted: documentEncrypted,
         front_doc_url: frontUpload.url,
         back_doc_url: backUrl || userExistingDoc.back_doc_url,
         status: 'PENDING',
@@ -195,6 +215,7 @@ const submitKyc = async (onboardingToken, data, files) => {
         user_id: user.id,
         document_type: doc.document_type,
         document_number_hash: documentHash,
+        document_number_encrypted: documentEncrypted,
         front_doc_url: frontUpload.url,
         back_doc_url: backUrl,
         status: 'PENDING',
@@ -228,4 +249,5 @@ module.exports = {
   getKycStatus,
   submitKyc,
   hashDocumentNumber,
+  encryptDocumentNumber,
 };

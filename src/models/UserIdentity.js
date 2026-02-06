@@ -22,11 +22,18 @@ module.exports = (sequelize) => {
       document_type: {
         type: DataTypes.STRING(30),
         allowNull: false,
+        comment: 'AADHAAR, DRIVING_LICENSE, PAN_CARD',
       },
       document_number_hash: {
         type: DataTypes.TEXT,
         allowNull: false,
         unique: true,
+        comment: 'SHA-256 hash for duplicate detection',
+      },
+      document_number_encrypted: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'AES-256-GCM encrypted document number for admin verification',
       },
       front_doc_url: {
         type: DataTypes.TEXT,
@@ -39,6 +46,7 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING(20),
         allowNull: false,
         defaultValue: 'PENDING',
+        comment: 'PENDING, APPROVED, REJECTED',
       },
       reject_reason: {
         type: DataTypes.TEXT,

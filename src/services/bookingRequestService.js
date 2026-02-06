@@ -4,6 +4,7 @@ const { BookingRequest, Car, CarImage, User, Role } = require('../models');
 const { Op } = require('sequelize');
 const notificationService = require('./notificationService');
 const { DRIVER_DAILY_REQUEST_LIMIT, OPERATOR_DAILY_INVITATION_LIMIT } = require('../config/limits');
+const { calculateRequestExpiryDate, isBookingRequestExpired, isCarInactive } = require('../utils/expiryHelper');
 
 /**
  * Get the start of today (midnight) for daily limit calculations
@@ -54,6 +55,70 @@ const getDailyLimits = async (userId, roleCode) => {
     used_today: usedToday,
     remaining: Math.max(0, dailyLimit - usedToday),
   };
+};
+
+/**
+ * Check and expire a booking request if it has expired
+ * @param {Object} request - Booking request instance
+ * @returns {Promise<Object>} Updated request
+ */
+const checkAndExpireRequest = async (request) => {
+  if (isBookingRequestExpired(request)) {
+    request.status = 'EXPIRED';
+    await request.save();
+
+    // Send notification to initiator (async, non-blocking)
+    const car = request.car || await Car.findByPk(request.car_id);
+    const driver = request.driver || await User.findByPk(request.driver_id);
+
+    if (request.initiated_by === 'DRIVER') {
+      notificationService.notifyBookingRequestExpired(
+        request.driver_id,
+        car?.car_name || 'the car',
+        request.car_id
+      ).catch((err) => console.error('Notification error:', err));
+    } else {
+      notificationService.notifyBookingInvitationExpired(
+        request.operator_id,
+        driver?.full_name || 'the driver',
+        car?.car_name || 'the car',
+        request.car_id
+      ).catch((err) => console.error('Notification error:', err));
+    }
+  }
+  return request;
+};
+
+/**
+ * Expire all pending requests for a car (when car is deactivated)
+ * @param {number} carId - Car ID
+ * @param {string} carName - Car name for notifications
+ */
+const expireRequestsForCar = async (carId, carName) => {
+  const pendingRequests = await BookingRequest.findAll({
+    where: {
+      car_id: carId,
+      status: 'PENDING',
+    },
+    include: [
+      { model: User, as: 'driver', attributes: ['id', 'full_name'] },
+    ],
+  });
+
+  for (const request of pendingRequests) {
+    request.status = 'EXPIRED';
+    await request.save();
+
+    // Notify the initiator
+    const initiatorId = request.initiated_by === 'DRIVER' ? request.driver_id : request.operator_id;
+    notificationService.notifyRequestExpiredCarUnavailable(
+      initiatorId,
+      carName,
+      carId
+    ).catch((err) => console.error('Notification error:', err));
+  }
+
+  return pendingRequests.length;
 };
 
 /**
@@ -109,6 +174,27 @@ const createBookingRequest = async (data, driverId) => {
     throw error;
   }
 
+  // Check if car should be auto-deactivated due to inactivity
+  if (isCarInactive(car)) {
+    // Auto-deactivate the car
+    car.is_active = false;
+    await car.save();
+
+    // Expire all pending requests for this car
+    await expireRequestsForCar(car.id, car.car_name);
+
+    // Notify operator
+    notificationService.notifyCarAutoDeactivated(
+      car.operator_id,
+      car.car_name,
+      car.id
+    ).catch((err) => console.error('Notification error:', err));
+
+    const error = new Error('Car is no longer available');
+    error.statusCode = 400;
+    throw error;
+  }
+
   // Check if driver is trying to book their own car
   if (car.operator_id.toString() === driverId.toString()) {
     const error = new Error('You cannot book your own car');
@@ -132,7 +218,7 @@ const createBookingRequest = async (data, driverId) => {
     throw error;
   }
 
-  // Create the booking request
+  // Create the booking request with expiry date
   const bookingRequest = await BookingRequest.create({
     car_id,
     driver_id: driverId,
@@ -140,6 +226,7 @@ const createBookingRequest = async (data, driverId) => {
     initiated_by: 'DRIVER',
     message: message || null,
     status: 'PENDING',
+    expires_at: calculateRequestExpiryDate(),
   });
 
   // Send notification to operator
@@ -264,7 +351,7 @@ const inviteDriver = async (data, operatorId) => {
     throw error;
   }
 
-  // Create the booking request (invitation)
+  // Create the booking request (invitation) with expiry date
   const bookingRequest = await BookingRequest.create({
     car_id,
     driver_id,
@@ -272,6 +359,7 @@ const inviteDriver = async (data, operatorId) => {
     initiated_by: 'OPERATOR',
     message: message || null,
     status: 'PENDING',
+    expires_at: calculateRequestExpiryDate(),
   });
 
   // Send notification to driver
@@ -336,6 +424,9 @@ const getBookingRequestById = async (requestId, userId, roleCode) => {
     error.statusCode = 403;
     throw error;
   }
+
+  // Check and expire if needed
+  await checkAndExpireRequest(bookingRequest);
 
   return formatBookingRequest(bookingRequest, roleCode);
 };
@@ -405,8 +496,12 @@ const listSentRequests = async (filters, userId, roleCode) => {
     offset,
   });
 
-  // Format the results
-  const formattedRequests = rows.map((request) => formatBookingRequest(request, roleCode));
+  // Check and expire requests, then format
+  const formattedRequests = [];
+  for (const request of rows) {
+    await checkAndExpireRequest(request);
+    formattedRequests.push(formatBookingRequest(request, roleCode));
+  }
 
   return {
     data: formattedRequests,
@@ -484,8 +579,12 @@ const listReceivedRequests = async (filters, userId, roleCode) => {
     offset,
   });
 
-  // Format the results
-  const formattedRequests = rows.map((request) => formatBookingRequest(request, roleCode));
+  // Check and expire requests, then format
+  const formattedRequests = [];
+  for (const request of rows) {
+    await checkAndExpireRequest(request);
+    formattedRequests.push(formatBookingRequest(request, roleCode));
+  }
 
   return {
     data: formattedRequests,
@@ -542,6 +641,29 @@ const updateBookingRequestStatus = async (requestId, data, userId, roleCode) => 
     throw error;
   }
 
+  // Check if request has expired
+  if (bookingRequest.status === 'EXPIRED' || isBookingRequestExpired(bookingRequest)) {
+    if (bookingRequest.status === 'PENDING') {
+      bookingRequest.status = 'EXPIRED';
+      await bookingRequest.save();
+    }
+    const error = new Error('This request has expired');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Check if car is still active
+  const car = bookingRequest.car;
+  if (!car.is_active || isCarInactive(car)) {
+    // Expire this request
+    bookingRequest.status = 'EXPIRED';
+    await bookingRequest.save();
+
+    const error = new Error('Car is no longer available');
+    error.statusCode = 400;
+    throw error;
+  }
+
   // Check if user is the receiver of this request
   // If initiated_by = DRIVER, then OPERATOR is the receiver
   // If initiated_by = OPERATOR, then DRIVER is the receiver
@@ -573,20 +695,31 @@ const updateBookingRequestStatus = async (requestId, data, userId, roleCode) => 
 
   await bookingRequest.save();
 
-  // Send notification to the initiator
-  const car = bookingRequest.car;
+  // Send notifications to both parties
   const driver = bookingRequest.driver;
   const operator = bookingRequest.requestOperator;
 
   if (bookingRequest.initiated_by === 'DRIVER') {
     // Operator is responding to driver's request
     if (status === 'ACCEPTED') {
+      // Notify driver (initiator) with operator's phone
       notificationService.notifyBookingRequestAccepted(
         driver.id,
         operator.agency_name || operator.full_name || 'The operator',
         car.car_name,
         bookingRequest.id,
-        car.id
+        car.id,
+        operator.phone_number
+      ).catch((err) => console.error('Notification error:', err));
+
+      // Notify operator (acceptor) with driver's phone
+      notificationService.notifyBookingRequestAcceptedConfirmation(
+        operator.id,
+        driver.full_name || 'The driver',
+        car.car_name,
+        bookingRequest.id,
+        car.id,
+        driver.phone_number
       ).catch((err) => console.error('Notification error:', err));
     } else {
       notificationService.notifyBookingRequestRejected(
@@ -601,12 +734,24 @@ const updateBookingRequestStatus = async (requestId, data, userId, roleCode) => 
   } else {
     // Driver is responding to operator's invitation
     if (status === 'ACCEPTED') {
+      // Notify operator (initiator) with driver's phone
       notificationService.notifyBookingInvitationAccepted(
         operator.id,
         driver.full_name || 'The driver',
         car.car_name,
         bookingRequest.id,
-        car.id
+        car.id,
+        driver.phone_number
+      ).catch((err) => console.error('Notification error:', err));
+
+      // Notify driver (acceptor) with operator's phone
+      notificationService.notifyBookingInvitationAcceptedConfirmation(
+        driver.id,
+        operator.agency_name || operator.full_name || 'The operator',
+        car.car_name,
+        bookingRequest.id,
+        car.id,
+        operator.phone_number
       ).catch((err) => console.error('Notification error:', err));
     } else {
       notificationService.notifyBookingInvitationRejected(
@@ -752,6 +897,7 @@ const getRequestCounts = async (userId, roleCode) => {
 
 /**
  * Format booking request for response
+ * Phone numbers are only visible when status is ACCEPTED
  * @param {Object} bookingRequest - Booking request model instance
  * @param {string} roleCode - User's role code
  * @returns {Object} Formatted booking request
@@ -760,6 +906,9 @@ const formatBookingRequest = (bookingRequest, roleCode) => {
   const car = bookingRequest.car;
   const driver = bookingRequest.driver;
   const operator = bookingRequest.requestOperator;
+
+  // Phone numbers only visible when ACCEPTED
+  const showPhone = bookingRequest.status === 'ACCEPTED';
 
   // Sort images to put primary first
   const sortedImages = car.images
@@ -772,6 +921,7 @@ const formatBookingRequest = (bookingRequest, roleCode) => {
     message: bookingRequest.message,
     status: bookingRequest.status,
     reject_reason: bookingRequest.reject_reason,
+    expires_at: bookingRequest.expires_at,
     created_at: bookingRequest.created_at,
     updated_at: bookingRequest.updated_at,
     car: {
@@ -795,7 +945,7 @@ const formatBookingRequest = (bookingRequest, roleCode) => {
     driver: {
       id: driver.id.toString(),
       full_name: driver.full_name,
-      phone_number: driver.phone_number,
+      phone_number: showPhone ? driver.phone_number : null,
       profile_image_url: driver.profile_image_url,
       kyc_verified: driver.kyc_status === 'APPROVED',
     },
@@ -803,7 +953,7 @@ const formatBookingRequest = (bookingRequest, roleCode) => {
       id: operator.id.toString(),
       full_name: operator.full_name,
       agency_name: operator.agency_name,
-      phone_number: operator.phone_number,
+      phone_number: showPhone ? operator.phone_number : null,
       profile_image_url: operator.profile_image_url,
       kyc_verified: operator.kyc_status === 'APPROVED',
     },
@@ -838,4 +988,6 @@ module.exports = {
   getRequestCounts,
   getPendingRequestCount,
   getDailyLimits,
+  expireRequestsForCar,
+  checkAndExpireRequest,
 };

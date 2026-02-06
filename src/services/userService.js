@@ -1,6 +1,7 @@
 const { User, Role, UserIdentity } = require('../models');
 const { Op } = require('sequelize');
 const uploadService = require('./uploadService');
+const AppError = require('../utils/AppError');
 
 /**
  * Get user profile by ID (current user)
@@ -17,7 +18,7 @@ const getProfile = async (userId) => {
   });
 
   if (!user) {
-    throw new Error('User not found');
+    throw AppError.userNotFound(`User ${userId} not found in getProfile`);
   }
 
   // Build onboarding status
@@ -58,7 +59,7 @@ const updateProfile = async (userId, data, profileImage = null) => {
   const user = await User.findByPk(userId);
 
   if (!user) {
-    throw new Error('User not found');
+    throw AppError.userNotFound(`User ${userId} not found in updateProfile`);
   }
 
   // Build update data from allowed fields
@@ -110,7 +111,7 @@ const getPublicProfile = async (userId) => {
   });
 
   if (!user) {
-    throw new Error('User not found');
+    throw AppError.userNotFound(`User ${userId} not found in getPublicProfile`);
   }
 
   return {
@@ -149,11 +150,11 @@ const formatUserProfile = (user) => {
  * Logic:
  * 1. Find all users with DRIVER role
  * 2. Filter by KYC approved and active
- * 3. Apply search filter if provided
- * 4. Return paginated list
+ * 3. Apply search, city, area filters if provided
+ * 4. Return paginated list with city/area info
  */
 const listDrivers = async (filters) => {
-  const { search, page = 1, limit = 10 } = filters;
+  const { search, city, area, page = 1, limit = 10 } = filters;
   const offset = (page - 1) * limit;
 
   // Get driver role
@@ -172,7 +173,17 @@ const listDrivers = async (filters) => {
     is_active: true,
   };
 
-  // Search filter
+  // City filter (case-insensitive)
+  if (city) {
+    where.city = { [Op.iLike]: city };
+  }
+
+  // Area filter (case-insensitive)
+  if (area) {
+    where.area = { [Op.iLike]: area };
+  }
+
+  // Search filter (name or phone)
   if (search) {
     where[Op.or] = [
       { full_name: { [Op.iLike]: `%${search}%` } },
@@ -182,7 +193,7 @@ const listDrivers = async (filters) => {
 
   const { count, rows } = await User.findAndCountAll({
     where,
-    attributes: ['id', 'full_name', 'phone_number', 'profile_image_url', 'kyc_status'],
+    attributes: ['id', 'full_name', 'phone_number', 'profile_image_url', 'city', 'area', 'kyc_status'],
     order: [['full_name', 'ASC']],
     limit,
     offset,
@@ -193,6 +204,8 @@ const listDrivers = async (filters) => {
     full_name: user.full_name,
     phone_number: user.phone_number,
     profile_image_url: user.profile_image_url,
+    city: user.city,
+    area: user.area,
     kyc_verified: user.kyc_status === 'APPROVED',
   }));
 

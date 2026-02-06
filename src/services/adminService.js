@@ -4,6 +4,7 @@ const { User, Role, UserIdentity, Car, CarImage, BookingRequest } = require('../
 const { Op } = require('sequelize');
 const uploadService = require('./uploadService');
 const notificationService = require('./notificationService');
+const { decrypt } = require('../utils/encryption');
 
 /**
  * Get dashboard statistics
@@ -206,7 +207,8 @@ const listUsers = async (filters) => {
 };
 
 /**
- * Get user details by ID
+ * Get user details by ID (Admin)
+ * Includes decrypted document numbers for KYC verification
  */
 const getUserById = async (userId) => {
   const user = await User.findByPk(userId, {
@@ -219,7 +221,16 @@ const getUserById = async (userId) => {
       {
         model: UserIdentity,
         as: 'documents',
-        attributes: ['id', 'document_type', 'front_doc_url', 'back_doc_url', 'status', 'reject_reason', 'created_at'],
+        attributes: [
+          'id',
+          'document_type',
+          'document_number_encrypted',
+          'front_doc_url',
+          'back_doc_url',
+          'status',
+          'reject_reason',
+          'created_at',
+        ],
       },
     ],
   });
@@ -261,6 +272,7 @@ const getUserById = async (userId) => {
     documents: user.documents.map((doc) => ({
       id: doc.id,
       document_type: doc.document_type,
+      document_number: decrypt(doc.document_number_encrypted), // Decrypted for admin
       front_doc_url: doc.front_doc_url,
       back_doc_url: doc.back_doc_url,
       status: doc.status,
@@ -320,6 +332,7 @@ const updateUserStatus = async (userId, data) => {
 
 /**
  * List users with pending KYC
+ * Includes decrypted document numbers for admin verification
  */
 const listPendingKyc = async (filters) => {
   const { role, page, limit } = filters;
@@ -353,7 +366,14 @@ const listPendingKyc = async (filters) => {
       {
         model: UserIdentity,
         as: 'documents',
-        attributes: ['id', 'document_type', 'status'],
+        attributes: [
+          'id',
+          'document_type',
+          'document_number_encrypted',
+          'front_doc_url',
+          'back_doc_url',
+          'status',
+        ],
       },
     ],
     attributes: [
@@ -379,6 +399,9 @@ const listPendingKyc = async (filters) => {
     documents: user.documents.map((doc) => ({
       id: doc.id,
       document_type: doc.document_type,
+      document_number: decrypt(doc.document_number_encrypted), // Decrypted for admin
+      front_doc_url: doc.front_doc_url,
+      back_doc_url: doc.back_doc_url,
       status: doc.status,
     })),
     submitted_at: user.created_at,

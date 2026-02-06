@@ -1,14 +1,72 @@
+'use strict';
+
 const { Op } = require('sequelize');
 const { Car, CarImage, User, Role, sequelize } = require('../models');
 const uploadService = require('./uploadService');
+const notificationService = require('./notificationService');
 const { compareIds } = require('../utils/helpers');
+const { isCarInactive, getCarInactivityThreshold } = require('../utils/expiryHelper');
+
+// Import expireRequestsForCar - will be set after bookingRequestService is loaded
+let expireRequestsForCar = null;
+
+/**
+ * Set the expireRequestsForCar function (to avoid circular dependency)
+ */
+const setExpireRequestsForCar = (fn) => {
+  expireRequestsForCar = fn;
+};
+
+/**
+ * Deactivate a car and expire all its pending requests
+ * @param {Object} car - Car instance
+ * @returns {Promise<number>} Number of expired requests
+ */
+const deactivateCarAndExpireRequests = async (car) => {
+  // Deactivate the car
+  car.is_active = false;
+  await car.save();
+
+  // Notify operator
+  notificationService.notifyCarAutoDeactivated(
+    car.operator_id,
+    car.car_name,
+    car.id
+  ).catch((err) => console.error('Notification error:', err));
+
+  // Expire all pending requests for this car
+  if (expireRequestsForCar) {
+    return expireRequestsForCar(car.id, car.car_name);
+  }
+  return 0;
+};
+
+/**
+ * Check and deactivate inactive cars in a list
+ * @param {Array} cars - Array of car instances
+ * @returns {Promise<Array>} Array of active cars
+ */
+const checkAndDeactivateInactiveCars = async (cars) => {
+  const activeCars = [];
+
+  for (const car of cars) {
+    if (car.is_active && isCarInactive(car)) {
+      await deactivateCarAndExpireRequests(car);
+      // Don't include this car in results (it's now inactive)
+    } else if (car.is_active) {
+      activeCars.push(car);
+    }
+  }
+
+  return activeCars;
+};
 
 /**
  * List cars with filters and pagination
  * 
  * Logic:
  * 1. Check user role (DRIVER or OPERATOR)
- * 2. For DRIVER: Show only active cars from all operators
+ * 2. For DRIVER: Show only active cars from all operators (check for inactive cars)
  * 3. For OPERATOR: Show only their own cars (active + inactive)
  * 4. Apply filters (search, category, fuel_type, etc.)
  * 5. Apply pagination
@@ -38,6 +96,10 @@ const listCars = async (userId, roleCode, filters) => {
   if (roleCode === 'DRIVER') {
     // Drivers see only active cars from all operators
     where.is_active = true;
+    
+    // Also filter out cars that should be auto-deactivated
+    // (last_active_at within the last 7 days)
+    where.last_active_at = { [Op.gte]: getCarInactivityThreshold() };
   } else if (roleCode === 'OPERATOR') {
     // Operators see only their own cars
     where.operator_id = userId;
@@ -118,16 +180,22 @@ const listCars = async (userId, roleCode, filters) => {
     distinct: true,
   });
 
+  // For drivers, check and deactivate any inactive cars that slipped through
+  let filteredCars = cars;
+  if (roleCode === 'DRIVER') {
+    filteredCars = await checkAndDeactivateInactiveCars(cars);
+  }
+
   // Format response with FULL details
-  const formattedCars = cars.map((car) => formatCarDetail(car));
+  const formattedCars = filteredCars.map((car) => formatCarDetail(car, roleCode));
 
   return {
     cars: formattedCars,
     meta: {
       page: parseInt(page),
       limit: parseInt(limit),
-      total: count,
-      total_pages: Math.ceil(count / limit),
+      total: roleCode === 'DRIVER' ? filteredCars.length : count,
+      total_pages: Math.ceil((roleCode === 'DRIVER' ? filteredCars.length : count) / limit),
     },
   };
 };
@@ -137,7 +205,7 @@ const listCars = async (userId, roleCode, filters) => {
  * 
  * Logic:
  * 1. Find car by ID with images and operator info
- * 2. For DRIVER: Only allow viewing active cars
+ * 2. For DRIVER: Only allow viewing active cars (check for inactivity)
  * 3. For OPERATOR: Only allow viewing their own cars
  * 4. Return full car details
  */
@@ -163,6 +231,11 @@ const getCarById = async (carId, userId, roleCode) => {
 
   // Access control
   if (roleCode === 'DRIVER') {
+    // Check if car should be auto-deactivated
+    if (car.is_active && isCarInactive(car)) {
+      await deactivateCarAndExpireRequests(car);
+    }
+
     // Drivers can only view active cars
     if (!car.is_active) {
       throw new Error('Car not found');
@@ -174,7 +247,7 @@ const getCarById = async (carId, userId, roleCode) => {
     }
   }
 
-  return formatCarDetail(car);
+  return formatCarDetail(car, roleCode);
 };
 
 /**
@@ -186,7 +259,7 @@ const getCarById = async (carId, userId, roleCode) => {
  *    - If exists for DIFFERENT operator, throw error
  * 2. Upload all files to S3 FIRST (before transaction)
  * 3. Start database transaction
- * 4. Create car record
+ * 4. Create car record with last_active_at = NOW()
  * 5. Create car image records
  * 6. Commit transaction
  * 7. If DB fails, rollback and cleanup S3 files
@@ -281,7 +354,7 @@ const createCar = async (operatorId, data, files) => {
     const transaction = await sequelize.transaction();
 
     try {
-      // Create car record
+      // Create car record with last_active_at
       const car = await Car.create({
         operator_id: operatorId,
         car_number: carNumber,
@@ -299,6 +372,7 @@ const createCar = async (operatorId, data, files) => {
         rc_front_url: rcFrontUpload.url,
         rc_back_url: rcBackUpload.url,
         is_active: data.is_active !== undefined ? data.is_active === 'true' || data.is_active === true : true,
+        last_active_at: new Date(), // Set initial activity timestamp
       }, { transaction });
 
       // Create car image records
@@ -353,11 +427,12 @@ const createCar = async (operatorId, data, files) => {
  * Logic:
  * 1. Find car and verify ownership
  * 2. Update RC documents if provided
- * 3. Update car fields
+ * 3. Update car fields + last_active_at
  * 4. Handle image removal (remove_images)
  * 5. Upload new images if provided
  * 6. Update primary image
- * 7. Return updated car
+ * 7. If deactivating, expire all pending requests
+ * 8. Return updated car
  */
 const updateCar = async (carId, operatorId, data, files) => {
   const car = await Car.findByPk(carId);
@@ -370,7 +445,10 @@ const updateCar = async (carId, operatorId, data, files) => {
     throw new Error('You do not have permission to update this car');
   }
 
-  const updateData = {};
+  const wasActive = car.is_active;
+  const updateData = {
+    last_active_at: new Date(), // Always update activity timestamp on any update
+  };
 
   // Update basic fields
   const allowedFields = [
@@ -484,6 +562,12 @@ const updateCar = async (carId, operatorId, data, files) => {
     }
   }
 
+  // If car was deactivated (was active, now inactive), expire all pending requests
+  const isNowActive = updateData.is_active !== undefined ? updateData.is_active : car.is_active;
+  if (wasActive && !isNowActive && expireRequestsForCar) {
+    await expireRequestsForCar(carId, car.car_name);
+  }
+
   // Return updated car
   return getCarById(carId, operatorId, 'OPERATOR');
 };
@@ -493,10 +577,11 @@ const updateCar = async (carId, operatorId, data, files) => {
  * 
  * Logic:
  * 1. Find car and verify ownership
- * 2. Delete all car images from S3
- * 3. Delete RC documents from S3
- * 4. Delete car images records
- * 5. Delete car record
+ * 2. Expire all pending requests for this car
+ * 3. Delete all car images from S3
+ * 4. Delete RC documents from S3
+ * 5. Delete car images records
+ * 6. Delete car record
  */
 const deleteCar = async (carId, operatorId) => {
   const car = await Car.findByPk(carId, {
@@ -509,6 +594,11 @@ const deleteCar = async (carId, operatorId) => {
 
   if (!compareIds(car.operator_id, operatorId)) {
     throw new Error('You do not have permission to delete this car');
+  }
+
+  // Expire all pending requests for this car before deleting
+  if (expireRequestsForCar) {
+    await expireRequestsForCar(carId, car.car_name);
   }
 
   // Delete car images from S3
@@ -555,8 +645,10 @@ const deleteCar = async (carId, operatorId) => {
 /**
  * Format car with FULL details
  * Used for both listing and detail view
+ * @param {Object} car - Car instance
+ * @param {string} roleCode - User's role code (for showing last_active_at to operators)
  */
-const formatCarDetail = (car) => {
+const formatCarDetail = (car, roleCode = null) => {
   // Sort images: primary first, then by created_at
   const sortedImages = car.images?.sort((a, b) => {
     if (a.is_primary && !b.is_primary) return -1;
@@ -564,7 +656,7 @@ const formatCarDetail = (car) => {
     return 0;
   }) || [];
 
-  return {
+  const result = {
     id: car.id,
     car_number: car.car_number,
     car_name: car.car_name,
@@ -597,6 +689,13 @@ const formatCarDetail = (car) => {
     created_at: car.created_at,
     updated_at: car.updated_at,
   };
+
+  // Include last_active_at only for operators viewing their own cars
+  if (roleCode === 'OPERATOR') {
+    result.last_active_at = car.last_active_at;
+  }
+
+  return result;
 };
 
 module.exports = {
@@ -605,4 +704,12 @@ module.exports = {
   createCar,
   updateCar,
   deleteCar,
+  setExpireRequestsForCar,
+  deactivateCarAndExpireRequests,
+  expireRequestsForCar: async (carId, carName) => {
+    if (expireRequestsForCar) {
+      return expireRequestsForCar(carId, carName);
+    }
+    return 0;
+  },
 };

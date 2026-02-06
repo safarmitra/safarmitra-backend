@@ -84,6 +84,8 @@ const validateProfileImage = (req, res, next) => {
  */
 const listDriversSchema = Joi.object({
   search: Joi.string().max(100).allow('', null),
+  city: Joi.string().max(100).allow('', null),
+  area: Joi.string().max(100).allow('', null),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(50).default(10),
 });

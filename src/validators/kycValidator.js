@@ -110,8 +110,8 @@ const validateDocumentFiles = (req, res, next) => {
         });
       }
 
-      // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+       // Validate file type (images only, no PDF)
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
       if (!allowedTypes.includes(frontFile.mimetype)) {
         return res.status(400).json({
           success: false,
@@ -121,7 +121,7 @@ const validateDocumentFiles = (req, res, next) => {
             details: [
               {
                 field: `documents[${i}].front_doc`,
-                message: 'Only JPEG, JPG, PNG and PDF files are allowed',
+                message: 'Only JPEG, JPG and PNG images are allowed',
               },
             ],
           },

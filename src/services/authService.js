@@ -4,6 +4,8 @@ const bcrypt = require('bcryptjs');
 const { admin } = require('../config/firebase');
 const { User, Role } = require('../models');
 const { Op } = require('sequelize');
+const AppError = require('../utils/AppError');
+const { ERROR_MESSAGES } = require('../utils/errorMessages');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -22,13 +24,16 @@ const generateOnboardingToken = () => {
 const verifyFirebaseToken = async (firebaseToken) => {
   try {
     if (admin.apps.length === 0) {
-      throw new Error('Firebase not initialized');
+      throw AppError.internal(
+        ERROR_MESSAGES.SERVICE_UNAVAILABLE,
+        'Firebase not initialized'
+      );
     }
 
     const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
 
     if (!decodedToken.phone_number) {
-      throw new Error('Phone number not found in token');
+      throw AppError.invalidCredentials('Phone number not found in Firebase token');
     }
 
     return {
@@ -36,7 +41,8 @@ const verifyFirebaseToken = async (firebaseToken) => {
       uid: decodedToken.uid,
     };
   } catch (error) {
-    throw new Error('Invalid Firebase token: ' + error.message);
+    if (error instanceof AppError) throw error;
+    throw AppError.invalidCredentials(`Firebase token verification failed: ${error.message}`);
   }
 };
 
@@ -46,7 +52,7 @@ const verifyFirebaseToken = async (firebaseToken) => {
  */
 const findUserByOnboardingToken = async (onboardingToken) => {
   if (!onboardingToken) {
-    throw new Error('Onboarding token is required');
+    throw AppError.sessionExpired('Onboarding token is missing');
   }
 
   const user = await User.findOne({
@@ -60,11 +66,11 @@ const findUserByOnboardingToken = async (onboardingToken) => {
   });
 
   if (!user) {
-    throw new Error('Invalid or expired onboarding token. Please login again.');
+    throw AppError.sessionExpired('Onboarding token not found or expired');
   }
 
   if (!user.is_active) {
-    throw new Error('Your account has been suspended. Please contact support.');
+    throw AppError.accountSuspended(`User ${user.id} is suspended`);
   }
 
   return user;
@@ -98,7 +104,7 @@ const verifyToken = (token) => {
   try {
     return jwt.verify(token, JWT_SECRET);
   } catch (error) {
-    throw new Error('Invalid or expired token');
+    throw AppError.sessionExpired(`JWT verification failed: ${error.message}`);
   }
 };
 
@@ -124,7 +130,10 @@ const loginOrRegister = async (firebaseToken, fcmToken = null) => {
     const decoded = await verifyFirebaseToken(firebaseToken);
     phoneNumber = decoded.phoneNumber;
   } else {
-    throw new Error('Firebase is not configured. Please add Firebase credentials.');
+    throw AppError.internal(
+      ERROR_MESSAGES.SERVICE_UNAVAILABLE,
+      'Firebase is not configured'
+    );
   }
 
   // Step 3: Find or create user
@@ -154,7 +163,7 @@ const loginOrRegister = async (firebaseToken, fcmToken = null) => {
 
   // Step 5: Check if user is active
   if (!user.is_active) {
-    throw new Error('Your account has been suspended. Please contact support.');
+    throw AppError.accountSuspended(`User ${user.id} is suspended`);
   }
 
   // Step 6: Build onboarding status
@@ -218,12 +227,20 @@ const selectRole = async (onboardingToken, roleCode) => {
   // Step 2: Find role
   const role = await Role.findOne({ where: { code: roleCode } });
   if (!role) {
-    throw new Error('Invalid role');
+    throw AppError.badRequest(
+      'Please select a valid role.',
+      null,
+      `Invalid role code: ${roleCode}`
+    );
   }
 
   // Step 3: Check if user can change role
   if (user.kyc_status === 'APPROVED') {
-    throw new Error('Cannot change role after KYC approval');
+    throw AppError.badRequest(
+      'Role cannot be changed after KYC approval.',
+      null,
+      `User ${user.id} tried to change role after KYC approval`
+    );
   }
 
   // Step 4: Update user
@@ -279,13 +296,8 @@ const formatUserResponse = (user) => {
 /**
  * Admin login with email and password
  * 
- * Logic:
- * 1. Find user by email
- * 2. Verify user exists and has ADMIN role
- * 3. Verify password
- * 4. Check if user is active
- * 5. Generate JWT token
- * 6. Return token and user data
+ * Security: Always return same error message for invalid credentials
+ * to prevent user enumeration attacks
  */
 const adminLogin = async (email, password) => {
   // Step 1: Find user by email
@@ -294,38 +306,33 @@ const adminLogin = async (email, password) => {
     include: [{ model: Role, as: 'role' }],
   });
 
+  // Security: Don't reveal if user exists
   if (!user) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
+    throw AppError.invalidCredentials('Admin login failed - user not found');
   }
 
   // Step 2: Verify user has ADMIN role
+  // Security: Don't reveal if user is not admin
   if (!user.role || user.role.code !== 'ADMIN') {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
+    throw AppError.invalidCredentials('Admin login failed - not an admin');
   }
 
   // Step 3: Verify password
+  // Security: Don't reveal if password is not set
   if (!user.password_hash) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
+    throw AppError.invalidCredentials('Admin login failed - no password set');
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+  // Security: Don't reveal if password is wrong
   if (!isPasswordValid) {
-    const error = new Error('Invalid email or password');
-    error.statusCode = 401;
-    throw error;
+    throw AppError.invalidCredentials('Admin login failed - wrong password');
   }
 
   // Step 4: Check if user is active
+  // This is okay to reveal since user has valid credentials
   if (!user.is_active) {
-    const error = new Error('Your account has been suspended. Please contact support.');
-    error.statusCode = 403;
-    throw error;
+    throw AppError.accountSuspended(`Admin ${user.id} is suspended`);
   }
 
   // Step 5: Generate JWT token
@@ -354,12 +361,6 @@ const formatAdminResponse = (user) => {
 
 /**
  * Change admin password
- * 
- * Logic:
- * 1. Find user by ID
- * 2. Verify current password
- * 3. Hash new password
- * 4. Update password
  */
 const changeAdminPassword = async (userId, currentPassword, newPassword) => {
   const user = await User.findByPk(userId, {
@@ -367,30 +368,34 @@ const changeAdminPassword = async (userId, currentPassword, newPassword) => {
   });
 
   if (!user) {
-    const error = new Error('User not found');
-    error.statusCode = 404;
-    throw error;
+    throw AppError.notFound(
+      ERROR_MESSAGES.RESOURCE_NOT_FOUND,
+      null,
+      `User ${userId} not found`
+    );
   }
 
   // Verify user is admin
   if (!user.role || user.role.code !== 'ADMIN') {
-    const error = new Error('Access denied');
-    error.statusCode = 403;
-    throw error;
+    throw AppError.accessDenied(`User ${userId} is not an admin`);
   }
 
   // Verify current password
   if (!user.password_hash) {
-    const error = new Error('Password not set');
-    error.statusCode = 400;
-    throw error;
+    throw AppError.badRequest(
+      'Password is not set for this account.',
+      null,
+      `User ${userId} has no password set`
+    );
   }
 
   const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
   if (!isPasswordValid) {
-    const error = new Error('Current password is incorrect');
-    error.statusCode = 401;
-    throw error;
+    throw AppError.badRequest(
+      'Current password is incorrect.',
+      null,
+      `Wrong current password for user ${userId}`
+    );
   }
 
   // Hash new password

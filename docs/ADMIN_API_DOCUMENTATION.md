@@ -1,8 +1,8 @@
 # Safar Mitra - Admin Panel API Documentation
 
-**Version:** 2.0.0  
+**Version:** 2.3.0  
 **Base URL:** `http://localhost:3000/api/v1`  
-**Last Updated:** January 2026
+**Last Updated:** January 2025
 
 ---
 
@@ -440,10 +440,11 @@ Get detailed user information including KYC documents and statistics.
     "id": "1",
     "phone_number": "+919876543210",
     "full_name": "John Doe",
-    "address": "123 Main Street, Mumbai",
+    "dob": "1990-01-15",
+    "city": "Ahmedabad",
+    "area": "Bodakdev",
     "agency_name": null,
     "profile_image_url": "https://s3.../profiles/john.jpg",
-    "dob": "1990-01-15",
     "role": "DRIVER",
     "kyc_status": "PENDING",
     "kyc_reject_reason": null,
@@ -453,6 +454,7 @@ Get detailed user information including KYC documents and statistics.
       {
         "id": 1,
         "document_type": "AADHAAR",
+        "document_number": "1234-5678-9012",
         "front_doc_url": "https://s3.../documents/aadhaar_front.jpg",
         "back_doc_url": "https://s3.../documents/aadhaar_back.jpg",
         "status": "PENDING",
@@ -468,6 +470,8 @@ Get detailed user information including KYC documents and statistics.
   }
 }
 ```
+
+> **Note:** The `document_number` field is decrypted from AES-256-GCM encrypted storage and is only visible to admins for KYC verification purposes.
 
 **Error Responses:**
 
@@ -582,6 +586,9 @@ List users with pending KYC verification.
         {
           "id": 1,
           "document_type": "AADHAAR",
+          "document_number": "1234-5678-9012",
+          "front_doc_url": "https://s3.../documents/aadhaar_front.jpg",
+          "back_doc_url": "https://s3.../documents/aadhaar_back.jpg",
           "status": "PENDING"
         }
       ],
@@ -596,6 +603,8 @@ List users with pending KYC verification.
   }
 }
 ```
+
+> **Note:** The `document_number` field is decrypted from AES-256-GCM encrypted storage and is only visible to admins for KYC verification purposes.
 
 ---
 
@@ -1041,12 +1050,113 @@ Edit the city's JSON file and add new areas to the `areas` array. Keep sorted al
 | 2 | OPERATOR | Operator |
 | 3 | ADMIN | Administrator |
 
-### Users Table (Admin-specific columns)
+### Users Table
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `email` | VARCHAR(255) | Admin email (unique) |
-| `password_hash` | TEXT | Bcrypt hashed password |
+| `id` | BIGINT | Primary key |
+| `role_id` | SMALLINT | Foreign key to roles table |
+| `phone_number` | VARCHAR(15) | User phone number (unique) |
+| `email` | VARCHAR(255) | Admin email (unique, nullable) |
+| `password_hash` | TEXT | Bcrypt hashed password (nullable, admin only) |
+| `full_name` | VARCHAR(100) | User's full name |
+| `dob` | VARCHAR(15) | Date of birth |
+| `city` | VARCHAR(100) | User's city |
+| `area` | VARCHAR(100) | User's area within city |
+| `address` | TEXT | Full address (deprecated, use city/area) |
+| `agency_name` | VARCHAR(150) | Agency name (for operators) |
+| `profile_image_url` | TEXT | S3 URL for profile image |
+| `fcm_token` | TEXT | Firebase Cloud Messaging token |
+| `is_active` | BOOLEAN | Account active status (default: true) |
+| `kyc_status` | VARCHAR(20) | KYC status (NOT_SUBMITTED, PENDING, APPROVED, REJECTED) |
+| `kyc_reject_reason` | TEXT | Reason for KYC rejection |
+| `onboarding_token` | VARCHAR(255) | Token for onboarding flow |
+| `onboarding_token_expires_at` | TIMESTAMP | Expiry for onboarding token |
+| `created_at` | TIMESTAMP | Record creation time |
+| `updated_at` | TIMESTAMP | Record update time |
+| `deleted_at` | TIMESTAMP | Soft delete timestamp |
+
+### Cars Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT | Primary key |
+| `operator_id` | BIGINT | Foreign key to users table |
+| `car_number` | VARCHAR(20) | Vehicle registration number (unique) |
+| `car_name` | VARCHAR(100) | Car model name |
+| `category` | VARCHAR(20) | TAXI or PRIVATE |
+| `transmission` | VARCHAR(20) | MANUAL or AUTOMATIC |
+| `fuel_type` | VARCHAR(20) | PETROL, DIESEL, CNG, ELECTRIC |
+| `rate_type` | VARCHAR(10) | 12HR or 24HR |
+| `rate_amount` | DECIMAL(10,2) | Rental rate |
+| `deposit_amount` | DECIMAL(10,2) | Security deposit (nullable) |
+| `purposes` | TEXT[] | Array of purposes (SELF_DRIVE, CORPORATE, etc.) |
+| `instructions` | TEXT | Special instructions |
+| `rc_front_url` | TEXT | S3 URL for RC front image |
+| `rc_back_url` | TEXT | S3 URL for RC back image |
+| `city` | VARCHAR(100) | Car's city location |
+| `area` | VARCHAR(100) | Car's area within city |
+| `is_active` | BOOLEAN | Listing active status (default: true) |
+| `last_active_at` | TIMESTAMP | Last activity time (for auto-deactivation) |
+| `created_at` | TIMESTAMP | Record creation time |
+| `updated_at` | TIMESTAMP | Record update time |
+
+### Booking Requests Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT | Primary key |
+| `car_id` | BIGINT | Foreign key to cars table |
+| `driver_id` | BIGINT | Foreign key to users table |
+| `operator_id` | BIGINT | Foreign key to users table |
+| `initiated_by` | VARCHAR(20) | DRIVER or OPERATOR |
+| `message` | TEXT | Request message |
+| `status` | VARCHAR(20) | PENDING, ACCEPTED, REJECTED, EXPIRED |
+| `reject_reason` | TEXT | Reason for rejection |
+| `expires_at` | TIMESTAMP | When request expires (created_at + 3 days) |
+| `created_at` | TIMESTAMP | Record creation time |
+| `updated_at` | TIMESTAMP | Record update time |
+
+### User Identity Table (KYC Documents)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | BIGINT | Primary key |
+| `user_id` | BIGINT | Foreign key to users table |
+| `document_type` | VARCHAR(30) | AADHAAR, DRIVING_LICENSE, PAN_CARD |
+| `document_number_hash` | TEXT | SHA-256 hash for duplicate detection (unique) |
+| `document_number_encrypted` | TEXT | AES-256-GCM encrypted for admin viewing |
+| `front_doc_url` | TEXT | S3 URL for front document image |
+| `back_doc_url` | TEXT | S3 URL for back document image (nullable) |
+| `status` | VARCHAR(20) | PENDING, APPROVED, REJECTED |
+| `reject_reason` | TEXT | Reason for rejection |
+| `created_at` | TIMESTAMP | Record creation time |
+| `updated_at` | TIMESTAMP | Record update time |
+
+> **Security Note:** Document numbers are stored with dual protection:
+> - `document_number_hash`: SHA-256 hash used for duplicate detection (irreversible)
+> - `document_number_encrypted`: AES-256-GCM encrypted, decryptable only by admin for KYC verification
+
+### Database Indexes
+
+| Table | Index Name | Columns | Purpose |
+|-------|------------|---------|---------|
+| `cars` | `idx_cars_city` | `city` | Faster city filter |
+| `cars` | `idx_cars_category` | `category` | Faster category filter |
+| `cars` | `idx_cars_is_active` | `is_active` | Faster active filter |
+| `cars` | `idx_cars_operator_id` | `operator_id` | Faster operator lookup |
+| `cars` | `idx_cars_last_active_at` | `last_active_at` | Faster expiry job |
+| `booking_requests` | `idx_booking_requests_status` | `status` | Faster status filter |
+| `booking_requests` | `idx_booking_requests_driver_id` | `driver_id` | Faster driver lookup |
+| `booking_requests` | `idx_booking_requests_operator_id` | `operator_id` | Faster operator lookup |
+| `booking_requests` | `idx_booking_requests_car_id` | `car_id` | Faster car lookup |
+| `booking_requests` | `idx_booking_requests_expires_at` | `expires_at` | Faster expiry job |
+| `notifications` | `idx_notifications_user_id_is_read` | `user_id, is_read` | Faster unread count |
+| `notifications` | `idx_notifications_user_id_created_at` | `user_id, created_at` | Faster listing |
+| `users` | `idx_users_kyc_status` | `kyc_status` | Faster KYC filter |
+| `users` | `idx_users_role_id` | `role_id` | Faster role filter |
+| `user_identity` | `idx_user_identity_user_id` | `user_id` | Faster document lookup |
+| `user_identity` | `idx_user_identity_status` | `status` | Faster status filter |
 
 ---
 

@@ -48,9 +48,15 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING(20),
         allowNull: false,
         defaultValue: 'PENDING',
+        comment: 'PENDING, ACCEPTED, REJECTED, or EXPIRED',
       },
       reject_reason: {
         type: DataTypes.TEXT,
+      },
+      expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'When the request expires (created_at + 3 days)',
       },
     },
     {

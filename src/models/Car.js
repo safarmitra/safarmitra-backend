@@ -77,6 +77,12 @@ module.exports = (sequelize) => {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
       },
+      last_active_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: DataTypes.NOW,
+        comment: 'Last activity timestamp for auto-deactivation after 7 days',
+      },
     },
     {
       tableName: 'cars',

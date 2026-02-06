@@ -209,8 +209,8 @@ const validateRcDocuments = (req, res, next) => {
     });
   }
 
-  // Validate file types
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+  // Validate file types (images only, no PDF)
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
   const maxSize = 5 * 1024 * 1024; // 5MB
 
   const allFiles = [
@@ -226,7 +226,7 @@ const validateRcDocuments = (req, res, next) => {
         message: 'Validation error',
         error: {
           code: 'VALIDATION_ERROR',
-          details: [{ field: file.fieldname, message: 'Only JPEG, JPG, PNG and PDF files are allowed' }],
+          details: [{ field: file.fieldname, message: 'Only JPEG, JPG and PNG images are allowed' }],
         },
       });
     }
@@ -263,7 +263,8 @@ const validateRcDocuments = (req, res, next) => {
  */
 const validateUpdateFiles = (req, res, next) => {
   const files = req.files || {};
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+  // Images only, no PDF
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
   const maxSize = 5 * 1024 * 1024; // 5MB
 
   const allFiles = [
@@ -279,7 +280,7 @@ const validateUpdateFiles = (req, res, next) => {
         message: 'Validation error',
         error: {
           code: 'VALIDATION_ERROR',
-          details: [{ field: file.fieldname, message: 'Only JPEG, JPG, PNG and PDF files are allowed' }],
+          details: [{ field: file.fieldname, message: 'Only JPEG, JPG and PNG images are allowed' }],
         },
       });
     }
