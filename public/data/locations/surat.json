@@ -1,0 +1,16 @@
+{
+  "slug": "surat",
+  "city": "Surat",
+  "areas": [
+    "Bardoli",
+    "Choryasi",
+    "Kamrej",
+    "Mahuva",
+    "Mandvi",
+    "Mangrol",
+    "Olpad",
+    "Palsana",
+    "Umarpada"
+  ],
+  "total_areas": 9
+}

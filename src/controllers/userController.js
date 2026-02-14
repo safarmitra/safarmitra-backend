@@ -18,14 +18,14 @@ const getMyProfile = async (req, res, next) => {
 
 /**
  * PUT /users/me
- * Update current user profile (info + image)
+ * Update current user profile (only city and area)
+ * Note: Only city and area fields can be updated. All other fields are silently ignored.
  */
 const updateMyProfile = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const profileImage = req.file || null;
 
-    const profile = await userService.updateProfile(userId, req.body, profileImage);
+    const profile = await userService.updateProfile(userId, req.body);
 
     return sendSuccess(res, profile, 'Profile updated successfully');
   } catch (error) {

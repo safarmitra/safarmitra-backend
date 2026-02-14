@@ -1,8 +1,6 @@
 {
   "slug": "ahmedabad",
   "city": "Ahmedabad",
-  "state": "Gujarat",
-  "country": "India",
   "areas": [
     "Ambawadi",
     "Amraiwadi",
@@ -77,7 +75,17 @@
     "Vastrapur",
     "Vejalpur",
     "Vinzol",
-    "Vishala"
+    "Vishala",
+    "Daskroi",
+    "Dholka",
+    "Sanand",
+    "Bavla",
+    "Viramgam",
+    "Dhandhuka",
+    "Detroj Rampura",
+    "Mandal",
+    "Ranpur",
+    "Barwala"
   ],
-  "total_areas": 74
+  "total_areas": 84
 }

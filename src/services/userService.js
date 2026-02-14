@@ -42,28 +42,27 @@ const getProfile = async (userId) => {
 };
 
 /**
- * Update user profile (info + image)
+ * Update user profile (only city and area)
  * 
  * Logic:
  * 1. Find user by ID
  * 2. Throw error if user not found
- * 3. Build update data from allowed fields
- * 4. If profile image provided:
- *    a. Delete old image from S3 (if exists)
- *    b. Upload new image to S3
- *    c. Add new image URL to update data
- * 5. Update user record
- * 6. Return updated profile
+ * 3. Build update data from allowed fields (city, area only)
+ * 4. Update user record
+ * 5. Return updated profile
+ * 
+ * Note: Only city and area can be edited. All other fields including
+ * profile image are silently ignored.
  */
-const updateProfile = async (userId, data, profileImage = null) => {
+const updateProfile = async (userId, data) => {
   const user = await User.findByPk(userId);
 
   if (!user) {
     throw AppError.userNotFound(`User ${userId} not found in updateProfile`);
   }
 
-  // Build update data from allowed fields
-  const allowedFields = ['full_name', 'dob', 'city', 'area', 'agency_name'];
+  // Build update data from allowed fields (only city and area)
+  const allowedFields = ['city', 'area'];
   const updateData = {};
 
   allowedFields.forEach((field) => {
@@ -72,27 +71,10 @@ const updateProfile = async (userId, data, profileImage = null) => {
     }
   });
 
-  // Handle profile image upload
-  if (profileImage) {
-    // Delete old image if exists
-    if (user.profile_image_url) {
-      const oldKey = uploadService.getKeyFromUrl(user.profile_image_url);
-      if (oldKey) {
-        try {
-          await uploadService.deleteFromS3(oldKey);
-        } catch (error) {
-          console.error('Error deleting old profile image:', error.message);
-        }
-      }
-    }
-
-    // Upload new image
-    const { url } = await uploadService.uploadToS3(profileImage, 'profiles');
-    updateData.profile_image_url = url;
+  // Update user only if there are allowed fields to update
+  if (Object.keys(updateData).length > 0) {
+    await user.update(updateData);
   }
-
-  // Update user
-  await user.update(updateData);
 
   return getProfile(userId);
 };

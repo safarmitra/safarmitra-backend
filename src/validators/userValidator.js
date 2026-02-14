@@ -1,22 +1,17 @@
 const Joi = require('joi');
 
+/**
+ * Profile update schema - Only city and area can be updated
+ * All other fields are silently ignored at the service level
+ */
 const updateProfileSchema = Joi.object({
-  full_name: Joi.string().max(100).allow('', null).messages({
-    'string.max': 'Full name must be less than 100 characters',
-  }),
-  dob: Joi.string().max(15).allow('', null).messages({
-    'string.max': 'Date of birth must be less than 15 characters',
-  }),
   city: Joi.string().max(100).allow('', null).messages({
     'string.max': 'City must be less than 100 characters',
   }),
   area: Joi.string().max(100).allow('', null).messages({
     'string.max': 'Area must be less than 100 characters',
   }),
-  agency_name: Joi.string().max(150).allow('', null).messages({
-    'string.max': 'Agency name must be less than 150 characters',
-  }),
-});
+}).unknown(true); // Allow unknown fields but they will be ignored by service
 
 /**
  * Validate request body against schema

@@ -1,0 +1,14 @@
+{
+  "slug": "tapi",
+  "city": "Tapi",
+  "areas": [
+    "Vyara",
+    "Dolvan",
+    "Kukarmunda",
+    "Nizar",
+    "Songadh",
+    "Uchhal",
+    "Valod"
+  ],
+  "total_areas": 7
+}

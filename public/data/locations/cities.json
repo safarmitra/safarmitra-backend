@@ -1,12 +1,139 @@
 {
+  "state": "Gujarat",
+  "country": "India",
+  "total_cities": 33,
   "cities": [
     {
       "slug": "ahmedabad",
-      "name": "Ahmedabad",
-      "state": "Gujarat",
-      "country": "India"
+      "name": "Ahmedabad"
+    },
+    {
+      "slug": "amreli",
+      "name": "Amreli"
+    },
+    {
+      "slug": "anand",
+      "name": "Anand"
+    },
+    {
+      "slug": "aravalli",
+      "name": "Aravalli"
+    },
+    {
+      "slug": "banaskantha",
+      "name": "Banaskantha"
+    },
+    {
+      "slug": "bharuch",
+      "name": "Bharuch"
+    },
+    {
+      "slug": "bhavnagar",
+      "name": "Bhavnagar"
+    },
+    {
+      "slug": "botad",
+      "name": "Botad"
+    },
+    {
+      "slug": "chhota-udepur",
+      "name": "Chhota Udepur"
+    },
+    {
+      "slug": "dahod",
+      "name": "Dahod"
+    },
+    {
+      "slug": "dang",
+      "name": "Dang"
+    },
+    {
+      "slug": "devbhoomi-dwarka",
+      "name": "Devbhoomi Dwarka"
+    },
+    {
+      "slug": "gandhinagar",
+      "name": "Gandhinagar"
+    },
+    {
+      "slug": "gir-somnath",
+      "name": "Gir Somnath"
+    },
+    {
+      "slug": "jamnagar",
+      "name": "Jamnagar"
+    },
+    {
+      "slug": "junagadh",
+      "name": "Junagadh"
+    },
+    {
+      "slug": "kheda",
+      "name": "Kheda"
+    },
+    {
+      "slug": "kutch",
+      "name": "Kutch"
+    },
+    {
+      "slug": "mahisagar",
+      "name": "Mahisagar"
+    },
+    {
+      "slug": "mehsana",
+      "name": "Mehsana"
+    },
+    {
+      "slug": "morbi",
+      "name": "Morbi"
+    },
+    {
+      "slug": "narmada",
+      "name": "Narmada"
+    },
+    {
+      "slug": "navsari",
+      "name": "Navsari"
+    },
+    {
+      "slug": "panchmahal",
+      "name": "Panchmahal"
+    },
+    {
+      "slug": "patan",
+      "name": "Patan"
+    },
+    {
+      "slug": "porbandar",
+      "name": "Porbandar"
+    },
+    {
+      "slug": "rajkot",
+      "name": "Rajkot"
+    },
+    {
+      "slug": "sabarkantha",
+      "name": "Sabarkantha"
+    },
+    {
+      "slug": "surat",
+      "name": "Surat"
+    },
+    {
+      "slug": "surendranagar",
+      "name": "Surendranagar"
+    },
+    {
+      "slug": "tapi",
+      "name": "Tapi"
+    },
+    {
+      "slug": "vadodara",
+      "name": "Vadodara"
+    },
+    {
+      "slug": "valsad",
+      "name": "Valsad"
     }
-  ],
-  "total": 1,
-  "last_updated": "2025-01-10"
+  ]
 }

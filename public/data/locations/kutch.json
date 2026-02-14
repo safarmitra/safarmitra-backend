@@ -1,0 +1,17 @@
+{
+  "slug": "kutch",
+  "city": "Kutch",
+  "areas": [
+    "Bhuj",
+    "Anjar",
+    "Bhachau",
+    "Rapar",
+    "Gandhidham",
+    "Mandvi",
+    "Mundra",
+    "Nakhatrana",
+    "Lakhpat",
+    "Abdasa"
+  ],
+  "total_areas": 10
+}

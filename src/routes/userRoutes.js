@@ -1,17 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const userController = require('../controllers/userController');
 const { authMiddleware, requireRole, requireKyc } = require('../middlewares/authMiddleware');
-const { validateUpdateProfile, validateProfileImage, validateListDrivers } = require('../validators/userValidator');
-
-// Configure multer for memory storage
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-});
+const { validateUpdateProfile, validateListDrivers } = require('../validators/userValidator');
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -19,11 +10,9 @@ router.use(authMiddleware);
 // GET /users/me - Get current user profile
 router.get('/me', userController.getMyProfile);
 
-// PUT /users/me - Update current user profile (info + image)
+// PUT /users/me - Update current user profile (only city and area)
 router.put(
   '/me',
-  upload.single('profile_image'),
-  validateProfileImage,
   validateUpdateProfile,
   userController.updateMyProfile
 );
