@@ -410,10 +410,11 @@ All User APIs require **JWT token** (KYC must be APPROVED).
     "id": "4",
     "phone_number": "+919876543210",
     "full_name": "Mahesh Bhai Dabhi",
-    "address": "123 Main Street, City",
-    "agency_name": "ABC Travels",
-    "profile_image_url": "http://localhost:3000/uploads/profiles/abc.jpg",
     "dob": "1990-01-15",
+    "city": "Ahmedabad",
+    "area": "Bodakdev",
+    "agency_name": "ABC Travels",
+    "profile_image_url": "https://s3.../profiles/abc.jpg",
     "role": "OPERATOR",
     "kyc_status": "APPROVED",
     "is_active": true,
@@ -433,32 +434,26 @@ All User APIs require **JWT token** (KYC must be APPROVED).
 
 **Endpoint:** `PUT /users/me`  
 **Auth Required:** JWT  
-**Content-Type:** `multipart/form-data`
+**Content-Type:** `application/json`
 
 **Middleware Chain:**
 1. `authMiddleware` - Verifies JWT token
-2. `upload.single('profile_image')` - Handles file upload
-3. `validateProfileImage` - Validates image file
-4. `validateUpdateProfile` - Validates request body
+2. `validateUpdateProfile` - Validates request body
 
 **Request Body:**
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
-| `full_name` | string | No | Max 100 characters |
-| `address` | string | No | Max 500 characters |
-| `agency_name` | string | No | Max 150 characters |
-| `dob` | string | No | Max 15 characters |
-| `profile_image` | file | No | JPEG/JPG/PNG, max 5MB |
+| `city` | string | No | Max 100 characters |
+| `area` | string | No | Max 100 characters |
 
-**Service Logic (`userService.updateMyProfile`):**
+> **Note:** Only `city` and `area` fields can be updated. All other fields (full_name, dob, agency_name, profile_image) are set during KYC submission and cannot be changed afterwards. Any other fields sent in the request will be silently ignored.
+
+**Service Logic (`userService.updateProfile`):**
 1. Get user ID from JWT token
 2. Find user by ID
-3. If profile_image provided:
-   - Delete old image from S3 (if exists)
-   - Upload new image to S3
-4. Update user fields
-5. Return updated profile
+3. Update only allowed fields (city, area)
+4. Return updated profile with onboarding status
 
 **Success Response (200):**
 ```json
@@ -468,14 +463,21 @@ All User APIs require **JWT token** (KYC must be APPROVED).
   "data": {
     "id": "4",
     "phone_number": "+919876543210",
-    "full_name": "Updated Name",
-    "address": "New Address",
-    "agency_name": "New Agency",
-    "profile_image_url": "http://localhost:3000/uploads/profiles/new.jpg",
+    "full_name": "Mahesh Bhai Dabhi",
     "dob": "1990-01-15",
+    "city": "Ahmedabad",
+    "area": "Bodakdev",
+    "agency_name": "ABC Travels",
+    "profile_image_url": "https://s3.../profiles/abc.jpg",
     "role": "OPERATOR",
     "kyc_status": "APPROVED",
-    "is_active": true
+    "is_active": true,
+    "created_at": "2026-01-03T10:00:00.000Z",
+    "onboarding": {
+      "role_selected": true,
+      "kyc_submitted": true,
+      "kyc_status": "APPROVED"
+    }
   }
 }
 ```
@@ -484,8 +486,8 @@ All User APIs require **JWT token** (KYC must be APPROVED).
 
 | Status | Message | When |
 |--------|---------|------|
-| 400 | Only JPEG, JPG and PNG images are allowed | Invalid file type |
-| 400 | Image size must be less than 5MB | File too large |
+| 400 | City must be less than 100 characters | City too long |
+| 400 | Area must be less than 100 characters | Area too long |
 
 ---
 
@@ -625,16 +627,18 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
     "kyc_reject_reason": null,
     "personal_info": {
       "full_name": "John Doe",
-      "address": "123 Main Street",
+      "dob": "1990-01-15",
+      "city": "Ahmedabad",
+      "area": "Bodakdev",
       "agency_name": "ABC Travels",
-      "profile_image_url": "http://localhost:3000/uploads/profiles/abc.jpg"
+      "profile_image_url": "https://s3.../profiles/abc.jpg"
     },
     "documents": [
       {
         "id": 1,
         "document_type": "AADHAAR",
-        "front_doc_url": "http://localhost:3000/uploads/documents/front.jpg",
-        "back_doc_url": "http://localhost:3000/uploads/documents/back.jpg",
+        "front_doc_url": "https://s3.../documents/front.jpg",
+        "back_doc_url": "https://s3.../documents/back.jpg",
         "status": "PENDING",
         "reject_reason": null
       }
@@ -660,16 +664,18 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
     "kyc_reject_reason": null,
     "personal_info": {
       "full_name": "John Doe",
-      "address": "123 Main Street",
+      "dob": "1990-01-15",
+      "city": "Ahmedabad",
+      "area": "Bodakdev",
       "agency_name": "ABC Travels",
-      "profile_image_url": "http://localhost:3000/uploads/profiles/abc.jpg"
+      "profile_image_url": "https://s3.../profiles/abc.jpg"
     },
     "documents": [
       {
         "id": 1,
         "document_type": "AADHAAR",
-        "front_doc_url": "http://localhost:3000/uploads/documents/front.jpg",
-        "back_doc_url": "http://localhost:3000/uploads/documents/back.jpg",
+        "front_doc_url": "https://s3.../documents/front.jpg",
+        "back_doc_url": "https://s3.../documents/back.jpg",
         "status": "APPROVED",
         "reject_reason": null
       }
@@ -678,12 +684,15 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
       "id": "1",
       "phone_number": "+919876543210",
       "full_name": "John Doe",
-      "address": "123 Main Street",
+      "dob": "1990-01-15",
+      "city": "Ahmedabad",
+      "area": "Bodakdev",
       "agency_name": "ABC Travels",
-      "profile_image_url": "http://...",
+      "profile_image_url": "https://s3.../profiles/abc.jpg",
       "role": "OPERATOR",
       "kyc_status": "APPROVED",
-      "is_active": true
+      "is_active": true,
+      "created_at": "2026-01-03T10:00:00.000Z"
     },
     "onboarding": {
       "role_selected": true,
@@ -722,8 +731,10 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 |-------|------|----------|------------|
 | `onboarding_token` | string | Yes | Valid onboarding token |
 | `full_name` | string | No* | Max 100 characters |
-| `address` | string | No* | Max 500 characters |
-| `agency_name` | string | No | Max 150 characters |
+| `dob` | string | No* | Date of birth (e.g., "1990-01-15") |
+| `city` | string | No* | Max 100 characters |
+| `area` | string | No | Max 100 characters |
+| `agency_name` | string | No | Max 150 characters (for operators) |
 | `profile_image` | file | No | JPEG/JPG/PNG (max 5MB) |
 | `documents` | array | No* | Array of document objects |
 
@@ -741,7 +752,7 @@ Header: X-Onboarding-Token: obt_a1b2c3d4e5f6...
 **Service Logic (`kycService.submitKyc`):**
 1. Find user by onboarding token
 2. Check user has selected a role
-3. Update personal info (full_name, address, agency_name)
+3. Update personal info (full_name, dob, city, area, agency_name)
 4. Upload profile image to S3 (if provided)
 5. Process each document:
    - Check if document type already exists
@@ -1954,10 +1965,15 @@ curl -X GET "http://localhost:3000/api/v1/kyc/status?onboarding_token=obt_xxx...
 curl -X POST http://localhost:3000/api/v1/kyc/submit \
   -F "onboarding_token=obt_xxx..." \
   -F "full_name=John Doe" \
-  -F "address=123 Main Street" \
+  -F "dob=1990-01-15" \
+  -F "city=Ahmedabad" \
+  -F "area=Bodakdev" \
+  -F "agency_name=ABC Travels" \
+  -F "profile_image=@/path/to/profile.jpg" \
   -F "documents[0][document_type]=AADHAAR" \
   -F "documents[0][document_number]=1234-5678-9012" \
-  -F "documents[0][front_doc]=@/path/to/aadhaar_front.jpg"
+  -F "documents[0][front_doc]=@/path/to/aadhaar_front.jpg" \
+  -F "documents[0][back_doc]=@/path/to/aadhaar_back.jpg"
 ```
 
 ### Verified User Flow

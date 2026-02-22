@@ -36,6 +36,19 @@ The Admin Panel provides system administrators with tools to:
 - **Manage Cars** - Monitor and remove car listings
 - **Monitor Bookings** - View all booking requests
 
+### Admin Capabilities
+
+| Action | Can Do | Cannot Do |
+|--------|--------|-----------|
+| **User Profile** | View user details | Edit user profile (name, dob, city, area, etc.) |
+| **KYC** | Approve/Reject KYC status | Edit/Upload KYC documents |
+| **Documents** | Approve/Reject individual documents | Edit document details |
+| **Account Status** | Suspend/Activate users | Delete user accounts |
+| **Cars** | View and delete cars | Edit car details |
+| **Booking Requests** | View all requests | Create/Edit/Delete requests |
+
+> **Note:** If a user needs to change their profile or KYC documents, they must resubmit through the app. Admin cannot modify user data directly.
+
 ### Admin Role
 
 Admins are users with `role = 'ADMIN'` in the database. They use **email/password authentication** (separate from regular user phone OTP flow).
@@ -473,6 +486,8 @@ Get detailed user information including KYC documents and statistics.
 
 > **Note:** The `document_number` field is decrypted from AES-256-GCM encrypted storage and is only visible to admins for KYC verification purposes.
 
+> **Important:** Admin can only **view** user profiles and KYC documents. Admin **cannot edit** user profile information or documents. Users must resubmit their KYC if changes are needed.
+
 **Error Responses:**
 
 | Status | Message | When |
@@ -498,15 +513,15 @@ Suspend or activate a user account.
 **Request Body:**
 ```json
 {
-  "is_active": false,
-  "reason": "Violation of terms of service"
+  "is_active": false
 }
 ```
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
 | `is_active` | boolean | Yes | `true` to activate, `false` to suspend |
-| `reason` | string | No | Max 500 characters |
+
+> **Note:** The `reason` field is not currently stored in the database. If you need to track suspension reasons, consider adding a `suspension_reason` column to the users table.
 
 **Service Logic (`adminService.updateUserStatus`):**
 1. Find user by ID
